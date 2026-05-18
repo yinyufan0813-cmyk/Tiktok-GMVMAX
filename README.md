@@ -11,6 +11,9 @@
 
 - `logs/gmvmax-records.jsonl`
 - `logs/gmvmax-records.csv`
+- `logs/gmvmax-plan-records.csv`
+
+`gmvmax-plan-records.csv` 会按 `Available TikTok accounts` 下方的不同账号分别记录 LIVE 计划，包括每次采集相对上一条记录增加的消耗金额、增加的成交金额、当前总消耗和当前总成交金额。
 
 ## 安装
 
