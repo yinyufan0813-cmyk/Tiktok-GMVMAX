@@ -5,12 +5,18 @@ import { chromium } from "playwright";
 
 const DEFAULT_CONFIG = {
   url: "",
+  mode: "attach",
+  cdpEndpoint: "http://127.0.0.1:9222",
   intervalMinutes: 10,
   headless: false,
   profileDir: "./chrome-profile",
   outputDir: "./logs",
   locale: "zh-CN",
   timezoneId: "Asia/Kuala_Lumpur",
+  tabMatch: {
+    urlIncludes: ["ads.tiktok.com", "gmv-max/dashboard", "type=live"],
+    titleIncludes: ["GMV"]
+  },
   selectors: {
     planRows: "",
     planName: "",
@@ -36,30 +42,25 @@ main().catch((error) => {
 async function main() {
   const args = new Set(process.argv.slice(2));
   const config = await loadConfig();
-  if (!config.url) {
-    throw new Error("Missing dashboard URL. Set `url` in config.json or set GMVMAX_URL.");
-  }
-
   const once = args.has("--once");
+  const listTabs = args.has("--list-tabs");
   const intervalMs = Math.max(1, Number(config.intervalMinutes || 10)) * 60 * 1000;
   const outputDir = path.resolve(config.outputDir);
 
   await fs.mkdir(outputDir, { recursive: true });
-  await fs.mkdir(path.resolve(config.profileDir), { recursive: true });
 
-  const context = await chromium.launchPersistentContext(path.resolve(config.profileDir), {
-    channel: "chrome",
-    headless: Boolean(config.headless),
-    locale: config.locale,
-    timezoneId: config.timezoneId,
-    viewport: { width: 1440, height: 980 }
-  });
+  const browserSession = await getBrowserSession(config);
+  if (listTabs) {
+    await printOpenTabs(browserSession.browser);
+    await browserSession.close();
+    return;
+  }
 
-  const page = context.pages()[0] ?? (await context.newPage());
-  await page.goto(config.url, { waitUntil: "domcontentloaded", timeout: 90_000 });
+  const page = await findTargetPage(browserSession.browser, config);
+  console.log(`[GMVMAX] Attached tab: ${await page.title()} | ${page.url()}`);
 
   console.log(`[GMVMAX] Started. Refresh interval: ${config.intervalMinutes} minute(s).`);
-  console.log("[GMVMAX] If TikTok asks you to log in, complete login in the opened Chrome window.");
+  console.log("[GMVMAX] Monitoring the existing Chrome tab. Keep that tab open while the script runs.");
 
   do {
     await collectOnce(page, config, outputDir);
@@ -67,7 +68,7 @@ async function main() {
     await wait(intervalMs);
   } while (true);
 
-  await context.close();
+  await browserSession.close();
 }
 
 async function loadConfig() {
@@ -87,6 +88,10 @@ function mergeConfig(base, override) {
     ...base,
     ...override,
     url: envUrl || override.url || base.url,
+    tabMatch: {
+      ...base.tabMatch,
+      ...(override.tabMatch || {})
+    },
     selectors: {
       ...base.selectors,
       ...(override.selectors || {})
@@ -94,13 +99,133 @@ function mergeConfig(base, override) {
   };
 }
 
+async function getBrowserSession(config) {
+  if (config.mode === "launch") {
+    await fs.mkdir(path.resolve(config.profileDir), { recursive: true });
+    const context = await chromium.launchPersistentContext(path.resolve(config.profileDir), {
+      channel: "chrome",
+      headless: Boolean(config.headless),
+      locale: config.locale,
+      timezoneId: config.timezoneId,
+      viewport: { width: 1440, height: 980 }
+    });
+    const page = context.pages()[0] ?? (await context.newPage());
+    if (config.url) {
+      await page.goto(config.url, { waitUntil: "domcontentloaded", timeout: 90_000 });
+    }
+    return {
+      browser: { contexts: () => [context] },
+      close: () => context.close()
+    };
+  }
+
+  try {
+    const browser = await chromium.connectOverCDP(config.cdpEndpoint);
+    return {
+      browser,
+      close: async () => {}
+    };
+  } catch (error) {
+    throw new Error(
+      [
+        `Cannot connect to existing Chrome at ${config.cdpEndpoint}.`,
+        "Start Chrome with remote debugging enabled, then open the TikTok GMV Max page in that Chrome window.",
+        "macOS example:",
+        "/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=9222 --user-data-dir=$HOME/.gmvmax-chrome",
+        `Original error: ${error.message}`
+      ].join("\n")
+    );
+  }
+}
+
+async function printOpenTabs(browser) {
+  const pages = allPages(browser);
+  if (pages.length === 0) {
+    console.log("[GMVMAX] No open pages found.");
+    return;
+  }
+
+  for (const [index, page] of pages.entries()) {
+    console.log(`[${index + 1}] ${await safeTitle(page)} | ${page.url()}`);
+  }
+}
+
+async function findTargetPage(browser, config) {
+  const pages = allPages(browser).filter((page) => isInspectablePage(page));
+  if (pages.length === 0) {
+    throw new Error("No inspectable Chrome tabs found.");
+  }
+
+  const scored = [];
+  for (const page of pages) {
+    const title = await safeTitle(page);
+    const url = page.url();
+    const score = scorePage({ title, url }, config);
+    scored.push({ page, title, url, score });
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+  const best = scored[0];
+  if (!best || best.score <= 0) {
+    const tabList = scored.map((item, index) => `[${index + 1}] ${item.title} | ${item.url}`).join("\n");
+    throw new Error(`Could not find the TikTok GMV Max tab. Open tabs:\n${tabList}`);
+  }
+
+  await best.page.bringToFront().catch(() => {});
+  return best.page;
+}
+
+function allPages(browser) {
+  return browser.contexts().flatMap((context) => context.pages());
+}
+
+function isInspectablePage(page) {
+  const url = page.url();
+  return url && !url.startsWith("chrome://") && !url.startsWith("devtools://");
+}
+
+async function safeTitle(page) {
+  try {
+    return await page.title();
+  } catch {
+    return "";
+  }
+}
+
+function scorePage({ title, url }, config) {
+  const targetUrl = config.url || "";
+  const target = safelyParseUrl(targetUrl);
+  const current = safelyParseUrl(url);
+  let score = 0;
+
+  if (target && current && current.host === target.host) score += 4;
+  if (target && current && current.pathname === target.pathname) score += 6;
+  if (targetUrl && url === targetUrl) score += 20;
+
+  for (const part of config.tabMatch.urlIncludes || []) {
+    if (part && url.includes(part)) score += 3;
+  }
+
+  for (const part of config.tabMatch.titleIncludes || []) {
+    if (part && title.toLowerCase().includes(part.toLowerCase())) score += 2;
+  }
+
+  return score;
+}
+
+function safelyParseUrl(value) {
+  try {
+    return value ? new URL(value) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function collectOnce(page, config, outputDir) {
   const timestamp = new Date().toISOString();
   console.log(`[GMVMAX] ${timestamp} refreshing dashboard...`);
 
-  await page.reload({ waitUntil: "networkidle", timeout: 120_000 }).catch(async () => {
-    await page.goto(config.url, { waitUntil: "networkidle", timeout: 120_000 });
-  });
+  await page.reload({ waitUntil: "networkidle", timeout: 120_000 });
 
   await acceptVisibleDialogs(page);
   await page.waitForTimeout(5000);
@@ -123,8 +248,7 @@ async function collectOnce(page, config, outputDir) {
           if (!ownText || ownText.length > 500) continue;
           if (!labelOptions.some((label) => ownText.includes(label))) continue;
 
-          const matchedLabel = labelOptions.find((label) => ownText.includes(label));
-          const localMatch = ownText.replace(matchedLabel, "").match(moneyRe);
+          const localMatch = ownText.replace(labelOptions.find((label) => ownText.includes(label)), "").match(moneyRe);
           if (localMatch) return localMatch[0].trim();
 
           const parent = node.parentElement;
