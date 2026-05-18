@@ -66,13 +66,27 @@ npm start
 
 ## 屏幕悬浮窗
 
-运行悬浮窗：
+推荐运行 HTML 悬浮面板：
+
+```bash
+open start_dashboard.command
+```
+
+面板会用三行显示三个账号，包含新增消耗、新增成交、新增 ROI、总消耗、总成交和总 ROI，并在每个数字旁边标出相对上一轮 10 分钟数据的 `▲` / `▼` / `→`。页面内容背景已做透明化处理。
+
+如果需要强制重开面板：
+
+```bash
+open reset_dashboard_window.command
+```
+
+备用 Tk 悬浮窗：
 
 ```bash
 python3 scripts/gmvmax_float.py
 ```
 
-悬浮窗会置顶显示最新一轮 `gmvmax-plan-records.csv` 数据，并每 30 秒刷新一次。拖动顶部标题栏可以移动窗口。
+悬浮窗会显示最新一轮 `gmvmax-plan-records.csv` 数据，并每 30 秒刷新一次。
 
 ## 如果页面字段没有识别出来
 
