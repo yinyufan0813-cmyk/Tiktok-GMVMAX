@@ -27,7 +27,9 @@ npm run install:browsers
 cp examples/config.example.json config.json
 ```
 
-默认已经填入当前 GMV Max 页面 URL。首次运行会打开一个 Chrome 窗口，如果 TikTok 要求登录，请在打开的窗口里完成登录。登录状态会保存在本项目的 `chrome-profile/` 目录里，后续运行会继续复用。
+把 `config.json` 里的 `url` 替换成你的 GMV Max 页面 URL。这个 URL 可能包含广告账号、卖家和业务中心标识，所以不要提交到公开仓库。
+
+首次运行会打开一个 Chrome 窗口，如果 TikTok 要求登录，请在打开的窗口里完成登录。登录状态会保存在本项目的 `chrome-profile/` 目录里，后续运行会继续复用。
 
 ## 运行一次
 
