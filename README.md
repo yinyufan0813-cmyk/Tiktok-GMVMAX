@@ -64,6 +64,16 @@ npm start
 
 如果确实想让脚本自己启动一个独立 Chrome，把 `config.json` 里的 `mode` 改成 `launch`。
 
+## 屏幕悬浮窗
+
+运行悬浮窗：
+
+```bash
+python3 scripts/gmvmax_float.py
+```
+
+悬浮窗会置顶显示最新一轮 `gmvmax-plan-records.csv` 数据，并每 30 秒刷新一次。拖动顶部标题栏可以移动窗口。
+
 ## 如果页面字段没有识别出来
 
 TikTok Ads 后台页面会变动。脚本会先通过文字标签自动查找这些字段：
