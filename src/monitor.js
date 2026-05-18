@@ -174,6 +174,9 @@ async function findTargetPage(browserSession, config) {
     const tabList = scored.map((item, index) => `[${index + 1}] ${item.title} | ${item.url}`).join("\n");
     throw new Error(`Could not find the TikTok GMV Max tab. Open tabs:\n${tabList}`);
   }
+  if (isTikTokLoginPage(best.url)) {
+    throw new Error("Found the TikTok Ads login tab. Complete login in Chrome first, then run the monitor again.");
+  }
 
   const page = await browserSession.connectPage(best.page);
   await page.bringToFront().catch(() => {});
@@ -220,6 +223,11 @@ function safelyParseUrl(value) {
   } catch {
     return null;
   }
+}
+
+function isTikTokLoginPage(url) {
+  const parsed = safelyParseUrl(url);
+  return parsed?.host === "ads.tiktok.com" && parsed.pathname.includes("/login");
 }
 
 async function fetchCdpTargets(endpoint) {
