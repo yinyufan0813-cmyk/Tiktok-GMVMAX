@@ -1,0 +1,17 @@
+{
+  "url": "https://ads.tiktok.com/i18n/gmv-max/dashboard?aadvid=7529709300881686546&is_refresh_page=true&oec_seller_id=7494989238589884894&bc_id=7362608187637366800&activated_tab_id=2&type=live&live_campaign_page=1&live_campaign_page_size=10&list_start_date=1779096162299&list_end_date=1779096162299",
+  "intervalMinutes": 10,
+  "headless": false,
+  "profileDir": "./chrome-profile",
+  "outputDir": "./logs",
+  "locale": "zh-CN",
+  "timezoneId": "Asia/Kuala_Lumpur",
+  "selectors": {
+    "planRows": "",
+    "planName": "",
+    "newSpend": "",
+    "newOrderAmount": "",
+    "totalSpend": "",
+    "totalOrderAmount": ""
+  }
+}
