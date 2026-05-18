@@ -29,7 +29,21 @@ cp examples/config.example.json config.json
 
 把 `config.json` 里的 `url` 替换成你的 GMV Max 页面 URL。这个 URL 可能包含广告账号、卖家和业务中心标识，所以不要提交到公开仓库。
 
-首次运行会打开一个 Chrome 窗口，如果 TikTok 要求登录，请在打开的窗口里完成登录。登录状态会保存在本项目的 `chrome-profile/` 目录里，后续运行会继续复用。
+脚本默认使用 `attach` 模式，接入一个已经打开的 Chrome 标签页，并自动查找 `LIVE GMV Max` 页面。Chrome 需要先以远程调试端口启动：
+
+```bash
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 --user-data-dir=$HOME/.gmvmax-chrome
+```
+
+然后在这个 Chrome 窗口里打开 TikTok GMV Max 页面并完成登录。
+
+可以先列出脚本能看到的标签页：
+
+```bash
+npm run list-tabs
+```
+
+确认能看到目标页后再运行监测。
 
 ## 运行一次
 
@@ -44,6 +58,8 @@ npm start
 ```
 
 脚本默认每 10 分钟刷新一次页面。要调整间隔，编辑 `config.json` 中的 `intervalMinutes`。
+
+如果确实想让脚本自己启动一个独立 Chrome，把 `config.json` 里的 `mode` 改成 `launch`。
 
 ## 如果页面字段没有识别出来
 
