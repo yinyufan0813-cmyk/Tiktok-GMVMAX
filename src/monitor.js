@@ -51,12 +51,12 @@ async function main() {
 
   const browserSession = await getBrowserSession(config);
   if (listTabs) {
-    await printOpenTabs(browserSession.browser);
+    await printOpenTabs(browserSession);
     await browserSession.close();
     return;
   }
 
-  const page = await findTargetPage(browserSession.browser, config);
+  const page = await findTargetPage(browserSession, config);
   console.log(`[GMVMAX] Attached tab: ${await page.title()} | ${page.url()}`);
 
   console.log(`[GMVMAX] Started. Refresh interval: ${config.intervalMinutes} minute(s).`);
@@ -114,15 +114,19 @@ async function getBrowserSession(config) {
       await page.goto(config.url, { waitUntil: "domcontentloaded", timeout: 90_000 });
     }
     return {
-      browser: { contexts: () => [context] },
+      kind: "playwright",
+      pages: async () => context.pages(),
+      connectPage: async (page) => page,
       close: () => context.close()
     };
   }
 
   try {
-    const browser = await chromium.connectOverCDP(config.cdpEndpoint);
+    const targets = await fetchCdpTargets(config.cdpEndpoint);
     return {
-      browser,
+      kind: "cdp",
+      pages: async () => targets.filter((target) => target.type === "page").map((target) => new CdpPageTarget(config.cdpEndpoint, target)),
+      connectPage: async (target) => CdpPage.connect(target),
       close: async () => {}
     };
   } catch (error) {
@@ -138,8 +142,8 @@ async function getBrowserSession(config) {
   }
 }
 
-async function printOpenTabs(browser) {
-  const pages = allPages(browser);
+async function printOpenTabs(browserSession) {
+  const pages = await browserSession.pages();
   if (pages.length === 0) {
     console.log("[GMVMAX] No open pages found.");
     return;
@@ -150,8 +154,8 @@ async function printOpenTabs(browser) {
   }
 }
 
-async function findTargetPage(browser, config) {
-  const pages = allPages(browser).filter((page) => isInspectablePage(page));
+async function findTargetPage(browserSession, config) {
+  const pages = (await browserSession.pages()).filter((page) => isInspectablePage(page));
   if (pages.length === 0) {
     throw new Error("No inspectable Chrome tabs found.");
   }
@@ -171,12 +175,9 @@ async function findTargetPage(browser, config) {
     throw new Error(`Could not find the TikTok GMV Max tab. Open tabs:\n${tabList}`);
   }
 
-  await best.page.bringToFront().catch(() => {});
-  return best.page;
-}
-
-function allPages(browser) {
-  return browser.contexts().flatMap((context) => context.pages());
+  const page = await browserSession.connectPage(best.page);
+  await page.bringToFront().catch(() => {});
+  return page;
 }
 
 function isInspectablePage(page) {
@@ -218,6 +219,123 @@ function safelyParseUrl(value) {
     return value ? new URL(value) : null;
   } catch {
     return null;
+  }
+}
+
+async function fetchCdpTargets(endpoint) {
+  const url = `${endpoint.replace(/\/$/, "")}/json/list`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Chrome DevTools returned ${response.status} ${response.statusText}`);
+  }
+  return response.json();
+}
+
+class CdpPageTarget {
+  constructor(endpoint, target) {
+    this.endpoint = endpoint;
+    this.target = target;
+  }
+
+  url() {
+    return this.target.url || "";
+  }
+
+  async title() {
+    return this.target.title || "";
+  }
+}
+
+class CdpPage {
+  constructor(target, socket) {
+    this.target = target;
+    this.socket = socket;
+    this.nextId = 1;
+    this.pending = new Map();
+    this.socket.addEventListener("message", (event) => this.onMessage(event));
+  }
+
+  static async connect(pageTarget) {
+    if (!pageTarget.target.webSocketDebuggerUrl) {
+      throw new Error(`Target has no webSocketDebuggerUrl: ${pageTarget.url()}`);
+    }
+
+    const socket = new WebSocket(pageTarget.target.webSocketDebuggerUrl);
+    await new Promise((resolve, reject) => {
+      socket.addEventListener("open", resolve, { once: true });
+      socket.addEventListener("error", reject, { once: true });
+    });
+
+    const page = new CdpPage(pageTarget.target, socket);
+    await page.command("Page.enable");
+    await page.command("Runtime.enable");
+    return page;
+  }
+
+  onMessage(event) {
+    const message = JSON.parse(event.data);
+    if (!message.id) return;
+    const pending = this.pending.get(message.id);
+    if (!pending) return;
+    this.pending.delete(message.id);
+
+    if (message.error) {
+      pending.reject(new Error(message.error.message));
+      return;
+    }
+    pending.resolve(message.result);
+  }
+
+  command(method, params = {}) {
+    const id = this.nextId++;
+    this.socket.send(JSON.stringify({ id, method, params }));
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+    });
+  }
+
+  url() {
+    return this.target.url || "";
+  }
+
+  async title() {
+    const result = await this.evaluate(() => document.title);
+    return result || this.target.title || "";
+  }
+
+  async bringToFront() {
+    await this.command("Page.bringToFront");
+  }
+
+  async reload() {
+    await this.command("Page.reload", { ignoreCache: true });
+    await this.waitForTimeout(8000);
+  }
+
+  async waitForTimeout(ms) {
+    await wait(ms);
+  }
+
+  async evaluate(fn, arg) {
+    const expression = `(${fn})(${JSON.stringify(arg)})`;
+    const result = await this.command("Runtime.evaluate", {
+      expression,
+      awaitPromise: true,
+      returnByValue: true
+    });
+    if (result.exceptionDetails) {
+      throw new Error(result.exceptionDetails.text || "Evaluation failed");
+    }
+    return result.result?.value;
+  }
+
+  async screenshot({ path: screenshotPath }) {
+    const result = await this.command("Page.captureScreenshot", {
+      format: "png",
+      fromSurface: true,
+      captureBeyondViewport: true
+    });
+    await fs.writeFile(screenshotPath, result.data, "base64");
   }
 }
 
@@ -316,12 +434,17 @@ async function collectOnce(page, config, outputDir) {
 
 async function acceptVisibleDialogs(page) {
   const buttons = ["Accept all", "Accept", "同意", "接受", "我知道了", "Got it"];
-  for (const name of buttons) {
-    const button = page.getByRole("button", { name, exact: false }).first();
-    if (await button.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await button.click().catch(() => {});
-    }
-  }
+  await page
+    .evaluate((names) => {
+      const elements = Array.from(document.querySelectorAll("button, [role='button']"));
+      for (const element of elements) {
+        const text = (element.innerText || element.textContent || "").trim();
+        if (names.some((name) => text.includes(name))) {
+          element.click();
+        }
+      }
+    }, buttons)
+    .catch(() => {});
 }
 
 async function appendJsonl(filePath, value) {
