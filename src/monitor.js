@@ -68,6 +68,7 @@ async function main() {
     await wait(intervalMs);
   } while (true);
 
+  await page.close?.();
   await browserSession.close();
 }
 
@@ -345,6 +346,10 @@ class CdpPage {
     });
     await fs.writeFile(screenshotPath, result.data, "base64");
   }
+
+  async close() {
+    this.socket.close();
+  }
 }
 
 async function collectOnce(page, config, outputDir) {
@@ -402,16 +407,73 @@ async function collectOnce(page, config, outputDir) {
         }));
       }
 
-      const metrics = Object.fromEntries(
+      function parseNumber(value) {
+        if (!value) return null;
+        const normalized = value.replace(/,/g, "");
+        const match = normalized.match(/-?\d+(?:\.\d+)?/);
+        return match ? Number(match[0]) : null;
+      }
+
+      function moneyText(value) {
+        return value == null ? null : `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MYR`;
+      }
+
+      function englishOverviewMetrics(bodyText) {
+        const cost = bodyText.match(/\bCost\s+([\d,]+(?:\.\d+)?)\s+MYR\s+vs last/i);
+        const grossRevenue = bodyText.match(/\bGross revenue \(Current shop\)\s+([\d,]+(?:\.\d+)?)\s+MYR\s+vs last/i);
+        return {
+          totalSpend: cost?.[1] ? `${cost[1]} MYR` : null,
+          totalOrderAmount: grossRevenue?.[1] ? `${grossRevenue[1]} MYR` : null
+        };
+      }
+
+      function englishLivePlans(bodyText) {
+        const rows = [];
+        const rowPattern =
+          /(LIVE GMV Max_[\s\S]*?)(?=\sLIVE GMV Max_| u user|\s*$)/g;
+        let match;
+        while ((match = rowPattern.exec(bodyText)) !== null) {
+          const rowText = match[1].replace(/\s+/g, " ").trim();
+          const values = Array.from(rowText.matchAll(/([\d,]+(?:\.\d+)?)\s+MYR/g)).map((item) => parseNumber(item[1]));
+          if (values.length < 6) continue;
+
+          const grossRevenueIndex = values.length >= 7 ? values.length - 5 : values.length - 4;
+          const planName = rowText.match(/^(.*?)\s+Active\s+/)?.[1] || `live-plan-${rows.length + 1}`;
+          rows.push({
+            index: rows.length + 1,
+            name: planName,
+            newSpend: moneyText(values[grossRevenueIndex - 1]),
+            newOrderAmount: moneyText(values[grossRevenueIndex]),
+            totalSpend: moneyText(values[2]),
+            totalOrderAmount: moneyText(values[grossRevenueIndex])
+          });
+        }
+        return rows;
+      }
+
+      const bodyText = textOf(document.body).slice(0, 20000);
+      const labelMetrics = Object.fromEntries(
         Object.entries(labels).map(([key, labelOptions]) => [key, valueAfterLabel(labelOptions)])
       );
+      const englishMetrics = englishOverviewMetrics(bodyText);
+      const plans = extractBySelectors();
+      const englishPlans = englishLivePlans(bodyText);
+      const parsedPlans = plans.length > 0 ? plans : englishPlans;
+      const planNewSpendTotal = parsedPlans.reduce((sum, plan) => sum + (parseNumber(plan.newSpend) || 0), 0);
+      const planNewOrderAmountTotal = parsedPlans.reduce((sum, plan) => sum + (parseNumber(plan.newOrderAmount) || 0), 0);
+      const metrics = {
+        newSpend: labelMetrics.newSpend || (planNewSpendTotal ? moneyText(planNewSpendTotal) : null),
+        newOrderAmount: labelMetrics.newOrderAmount || (planNewOrderAmountTotal ? moneyText(planNewOrderAmountTotal) : null),
+        totalSpend: labelMetrics.totalSpend || englishMetrics.totalSpend,
+        totalOrderAmount: labelMetrics.totalOrderAmount || englishMetrics.totalOrderAmount
+      };
 
       return {
         url: location.href,
         title: document.title,
         metrics,
-        plans: extractBySelectors(),
-        bodyText: textOf(document.body).slice(0, 20000)
+        plans: parsedPlans,
+        bodyText
       };
     },
     { labels: LABELS, selectors: config.selectors }
