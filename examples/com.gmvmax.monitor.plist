@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.gmvmax.monitor</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/npm</string>
+    <string>start</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/absolute/path/to/GMVMAX</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/absolute/path/to/GMVMAX/logs/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/absolute/path/to/GMVMAX/logs/launchd.err.log</string>
+</dict>
+</plist>
