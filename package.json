@@ -1,0 +1,15 @@
+{
+  "name": "tiktok-gmvmax-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Monitor TikTok Shop LIVE GMV Max plan spend and GMV every 10 minutes.",
+  "type": "module",
+  "scripts": {
+    "start": "node src/monitor.js",
+    "once": "node src/monitor.js --once",
+    "install:browsers": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.53.0"
+  }
+}
