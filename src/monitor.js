@@ -439,11 +439,12 @@ async function collectOnce(page, config, outputDir) {
 
           const grossRevenueIndex = values.length >= 7 ? values.length - 5 : values.length - 4;
           const planName = rowText.match(/^(.*?)\s+Active\s+/)?.[1] || `live-plan-${rows.length + 1}`;
+          const account = rowText.match(/recommendations?\s+(.*?)\s+ID:/i)?.[1] || null;
           rows.push({
             index: rows.length + 1,
+            account,
             name: planName,
-            newSpend: moneyText(values[grossRevenueIndex - 1]),
-            newOrderAmount: moneyText(values[grossRevenueIndex]),
+            netSpend: moneyText(values[grossRevenueIndex - 1]),
             totalSpend: moneyText(values[2]),
             totalOrderAmount: moneyText(values[grossRevenueIndex])
           });
@@ -459,11 +460,9 @@ async function collectOnce(page, config, outputDir) {
       const plans = extractBySelectors();
       const englishPlans = englishLivePlans(bodyText);
       const parsedPlans = plans.length > 0 ? plans : englishPlans;
-      const planNewSpendTotal = parsedPlans.reduce((sum, plan) => sum + (parseNumber(plan.newSpend) || 0), 0);
-      const planNewOrderAmountTotal = parsedPlans.reduce((sum, plan) => sum + (parseNumber(plan.newOrderAmount) || 0), 0);
       const metrics = {
-        newSpend: labelMetrics.newSpend || (planNewSpendTotal ? moneyText(planNewSpendTotal) : null),
-        newOrderAmount: labelMetrics.newOrderAmount || (planNewOrderAmountTotal ? moneyText(planNewOrderAmountTotal) : null),
+        newSpend: labelMetrics.newSpend || null,
+        newOrderAmount: labelMetrics.newOrderAmount || null,
         totalSpend: labelMetrics.totalSpend || englishMetrics.totalSpend,
         totalOrderAmount: labelMetrics.totalOrderAmount || englishMetrics.totalOrderAmount
       };
@@ -487,8 +486,10 @@ async function collectOnce(page, config, outputDir) {
     plans: record.plans
   };
 
+  await enrichPlanIncrements(path.join(outputDir, "gmvmax-records.jsonl"), result);
   await appendJsonl(path.join(outputDir, "gmvmax-records.jsonl"), result);
   await appendCsv(path.join(outputDir, "gmvmax-records.csv"), result);
+  await appendPlanCsv(path.join(outputDir, "gmvmax-plan-records.csv"), result);
 
   const missing = Object.entries(result.liveGmvMax).filter(([, value]) => !value);
   if (missing.length > 0) {
@@ -500,6 +501,58 @@ async function collectOnce(page, config, outputDir) {
   }
 
   console.log(`[GMVMAX] Saved: ${JSON.stringify(result.liveGmvMax)}`);
+}
+
+async function enrichPlanIncrements(historyPath, result) {
+  const previous = await readLatestRecordWithPlans(historyPath);
+  const previousByAccount = new Map(
+    (previous?.plans || [])
+      .filter((plan) => plan.account)
+      .map((plan) => [plan.account, plan])
+  );
+
+  for (const plan of result.plans || []) {
+    const previousPlan = previousByAccount.get(plan.account);
+    const spendIncrease = previousPlan
+      ? parseMoney(plan.totalSpend) - parseMoney(previousPlan.totalSpend)
+      : 0;
+    const orderAmountIncrease = previousPlan
+      ? parseMoney(plan.totalOrderAmount) - parseMoney(previousPlan.totalOrderAmount)
+      : 0;
+    plan.intervalSpendIncrease = moneyText(Math.max(0, spendIncrease));
+    plan.intervalOrderAmountIncrease = moneyText(Math.max(0, orderAmountIncrease));
+  }
+
+  const intervalSpend = (result.plans || []).reduce((sum, plan) => sum + parseMoney(plan.intervalSpendIncrease), 0);
+  const intervalOrderAmount = (result.plans || []).reduce((sum, plan) => sum + parseMoney(plan.intervalOrderAmountIncrease), 0);
+  result.liveGmvMax.newSpend = moneyText(intervalSpend);
+  result.liveGmvMax.newOrderAmount = moneyText(intervalOrderAmount);
+}
+
+async function readLatestRecordWithPlans(filePath) {
+  try {
+    const content = await fs.readFile(filePath, "utf8");
+    const lines = content.trim().split("\n").filter(Boolean);
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const record = JSON.parse(lines[index]);
+      if (Array.isArray(record.plans) && record.plans.some((plan) => plan.account)) {
+        return record;
+      }
+    }
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  return null;
+}
+
+function parseMoney(value) {
+  if (!value) return 0;
+  const match = String(value).replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : 0;
+}
+
+function moneyText(value) {
+  return `${Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MYR`;
 }
 
 async function acceptVisibleDialogs(page) {
@@ -540,6 +593,32 @@ async function appendCsv(filePath, result) {
     );
   }
   await fs.appendFile(filePath, `${row.join(",")}\n`, "utf8");
+}
+
+async function appendPlanCsv(filePath, result) {
+  const exists = await fileExists(filePath);
+  if (!exists) {
+    await fs.appendFile(
+      filePath,
+      "timestamp,account,campaign,interval_spend_increase,interval_order_amount_increase,total_spend,total_order_amount,net_spend,url\n",
+      "utf8"
+    );
+  }
+
+  for (const plan of result.plans || []) {
+    const row = [
+      result.timestamp,
+      plan.account,
+      plan.name,
+      plan.intervalSpendIncrease,
+      plan.intervalOrderAmountIncrease,
+      plan.totalSpend,
+      plan.totalOrderAmount,
+      plan.netSpend,
+      result.url
+    ].map(csvCell);
+    await fs.appendFile(filePath, `${row.join(",")}\n`, "utf8");
+  }
 }
 
 async function fileExists(filePath) {
