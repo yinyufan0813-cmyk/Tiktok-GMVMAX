@@ -1,5 +1,5 @@
 {
-  "url": "https://ads.tiktok.com/i18n/gmv-max/dashboard?aadvid=7529709300881686546&is_refresh_page=true&oec_seller_id=7494989238589884894&bc_id=7362608187637366800&activated_tab_id=2&type=live&live_campaign_page=1&live_campaign_page_size=10&list_start_date=1779096162299&list_end_date=1779096162299",
+  "url": "PASTE_YOUR_TIKTOK_GMV_MAX_DASHBOARD_URL_HERE",
   "intervalMinutes": 10,
   "headless": false,
   "profileDir": "./chrome-profile",
