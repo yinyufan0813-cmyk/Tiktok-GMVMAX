@@ -8,6 +8,8 @@
     "start": "node src/monitor.js",
     "once": "node src/monitor.js --once",
     "list-tabs": "node src/monitor.js --list-tabs",
+    "mobile": "node src/mobile-server.js",
+    "whatsapp-export": "node src/whatsapp-export.js",
     "install:browsers": "npx playwright install chromium"
   },
   "dependencies": {
