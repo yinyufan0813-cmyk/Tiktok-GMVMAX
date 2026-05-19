@@ -1,7 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = path.resolve(__dirname, "..");
+const PREFIX = "GMVMAX";
 
 const DEFAULT_CONFIG = {
   url: "",
@@ -46,7 +51,7 @@ async function main() {
   const once = args.has("--once");
   const listTabs = args.has("--list-tabs");
   const intervalMs = Math.max(1, Number(config.intervalMinutes || 10)) * 60 * 1000;
-  const outputDir = path.resolve(config.outputDir);
+  const outputDir = resolveProjectPath(config.outputDir);
 
   await fs.mkdir(outputDir, { recursive: true });
 
@@ -58,9 +63,9 @@ async function main() {
   }
 
   const page = await findTargetPage(browserSession, config);
-  console.log(`[GMVMAX] Attached tab: ${await page.title()} | ${page.url()}`);
-  console.log(`[GMVMAX] Started. Refresh interval: ${config.intervalMinutes} minute(s).`);
-  console.log("[GMVMAX] Monitoring the Chrome debugging tab. Keep the login valid while the script runs.");
+  console.log(`[${PREFIX}] Attached tab: ${await page.title()} | ${page.url()}`);
+  console.log(`[${PREFIX}] Started. Refresh interval: ${config.intervalMinutes} minute(s).`);
+  console.log(`[${PREFIX}] Keep the Chrome debugging window and TikTok GMV Max login valid.`);
 
   do {
     await collectOnce(page, config, outputDir);
@@ -73,7 +78,7 @@ async function main() {
 }
 
 async function loadConfig() {
-  const configPath = process.env.GMVMAX_CONFIG || "config.json";
+  const configPath = process.env.GMVMAX_CONFIG || path.join(PROJECT_ROOT, "config.json");
   try {
     const raw = await fs.readFile(configPath, "utf8");
     return mergeConfig(DEFAULT_CONFIG, JSON.parse(raw));
@@ -94,15 +99,21 @@ function mergeConfig(base, override) {
   };
 }
 
+function resolveProjectPath(value) {
+  if (!value) return PROJECT_ROOT;
+  return path.isAbsolute(value) ? value : path.resolve(PROJECT_ROOT, value);
+}
+
 async function getBrowserSession(config) {
   if (config.mode === "launch") {
-    await fs.mkdir(path.resolve(config.profileDir), { recursive: true });
-    const context = await chromium.launchPersistentContext(path.resolve(config.profileDir), {
+    await fs.mkdir(resolveProjectPath(config.profileDir), { recursive: true });
+    const context = await chromium.launchPersistentContext(resolveProjectPath(config.profileDir), {
       channel: "chrome",
       headless: Boolean(config.headless),
       locale: config.locale,
       timezoneId: config.timezoneId,
-      viewport: { width: 1440, height: 980 }
+      viewport: { width: 1440, height: 980 },
+      args: ["--disable-blink-features=AutomationControlled"]
     });
     const page = context.pages()[0] ?? (await context.newPage());
     if (config.url) await page.goto(refreshDashboardUrl(config.url) || config.url, { waitUntil: "domcontentloaded", timeout: 90_000 });
@@ -127,7 +138,7 @@ async function getBrowserSession(config) {
 async function printOpenTabs(browserSession) {
   const pages = await browserSession.pages();
   if (pages.length === 0) {
-    console.log("[GMVMAX] No open pages found.");
+    console.log(`[${PREFIX}] No open pages found.`);
     return;
   }
   for (const [index, page] of pages.entries()) {
@@ -138,7 +149,7 @@ async function printOpenTabs(browserSession) {
 async function findTargetPage(browserSession, config) {
   let pages = (await browserSession.pages()).filter(isInspectablePage);
   if (pages.length === 0 && config.url && browserSession.openTarget) {
-    console.log("[GMVMAX] No inspectable tabs found. Opening configured GMV Max URL...");
+    console.log(`[${PREFIX}] No inspectable tabs found. Opening configured GMV Max URL...`);
     await browserSession.openTarget(refreshDashboardUrl(config.url) || config.url);
     await wait(5000);
     pages = (await browserSession.pages()).filter(isInspectablePage);
@@ -149,7 +160,7 @@ async function findTargetPage(browserSession, config) {
   scored.sort((a, b) => b.score - a.score);
   let best = scored[0];
   if ((!best || best.score <= 0) && config.url && browserSession.openTarget) {
-    console.log("[GMVMAX] Could not find the GMV Max live tab. Opening configured URL...");
+    console.log(`[${PREFIX}] Could not find the GMV Max live tab. Opening configured URL...`);
     await browserSession.openTarget(refreshDashboardUrl(config.url) || config.url);
     await wait(5000);
     pages = (await browserSession.pages()).filter(isInspectablePage);
@@ -300,11 +311,11 @@ class CdpPage {
 
 async function collectOnce(page, config, outputDir) {
   const timestamp = new Date().toISOString();
-  console.log(`[GMVMAX] ${timestamp} refreshing dashboard...`);
+  console.log(`[${PREFIX}] ${timestamp} refreshing dashboard...`);
 
   const targetUrl = refreshDashboardUrl(page.url(), config.url);
   if (targetUrl) {
-    console.log("[GMVMAX] Navigating to current LIVE GMV Max window...");
+    console.log(`[${PREFIX}] Navigating to current LIVE GMV Max window...`);
     await page.goto(targetUrl, { waitUntil: "networkidle", timeout: 120_000 }).catch(async () => page.goto(targetUrl));
   } else {
     await page.reload({ waitUntil: "networkidle", timeout: 120_000 });
@@ -358,6 +369,31 @@ async function collectOnce(page, config, outputDir) {
       }));
     }
 
+    function extractTableRows() {
+      const rowNodes = Array.from(document.querySelectorAll("tr, [role='row']"));
+      return rowNodes
+        .map((row) => textOf(row))
+        .filter((rowText) => rowText.includes("recommendation") && rowText.includes(" ID:") && rowText.includes("MYR"))
+        .map((rowText, index) => {
+          const values = Array.from(rowText.matchAll(/([\d,]+(?:\.\d+)?)\s+MYR/g)).map((item) => parseNumber(item[1]));
+          if (values.length < 6) return null;
+
+          const activeIndex = rowText.indexOf(" Active ");
+          const name = activeIndex > 0 ? rowText.slice(0, activeIndex).trim() : `live-plan-${index + 1}`;
+          const account = rowText.match(/\d+\s+recommendations?\s+(.*?)\s+ID:/i)?.[1]?.trim() || null;
+
+          return {
+            index: index + 1,
+            account,
+            name,
+            totalSpend: moneyText(values[2]),
+            netSpend: moneyText(values[4]),
+            totalOrderAmount: moneyText(values[5])
+          };
+        })
+        .filter(Boolean);
+    }
+
     function parseNumber(value) {
       if (!value) return null;
       const match = String(value).replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
@@ -404,6 +440,7 @@ async function collectOnce(page, config, outputDir) {
     const labelMetrics = Object.fromEntries(Object.entries(labels).map(([key, labelOptions]) => [key, valueAfterLabel(labelOptions)]));
     const englishMetrics = englishOverviewMetrics(bodyText);
     const plans = extractBySelectors();
+    const tablePlans = extractTableRows();
     const englishPlans = englishLivePlans(bodyText);
     return {
       url: location.href,
@@ -414,7 +451,7 @@ async function collectOnce(page, config, outputDir) {
         totalSpend: labelMetrics.totalSpend || englishMetrics.totalSpend,
         totalOrderAmount: labelMetrics.totalOrderAmount || englishMetrics.totalOrderAmount
       },
-      plans: plans.length > 0 ? plans : englishPlans,
+      plans: plans.length > 0 ? plans : tablePlans.length > 0 ? tablePlans : englishPlans,
       bodyText
     };
   }, { labels: LABELS, selectors: config.selectors });
@@ -430,15 +467,28 @@ async function collectOnce(page, config, outputDir) {
     const safeStamp = timestamp.replace(/[:.]/g, "-");
     await fs.writeFile(path.join(outputDir, `debug-${safeStamp}.txt`), record.bodyText, "utf8");
     await page.screenshot({ path: path.join(outputDir, `debug-${safeStamp}.png`), fullPage: true });
-    console.warn(`[GMVMAX] Some metrics were not found: ${missing.map(([key]) => key).join(", ")}`);
-    console.warn("[GMVMAX] Saved debug text and screenshot in logs/. Add CSS selectors in config.json if needed.");
+    console.warn(`[${PREFIX}] Some metrics were not found: ${missing.map(([key]) => key).join(", ")}`);
+    console.warn(`[${PREFIX}] Saved debug text and screenshot in logs/. Add CSS selectors in config.json if needed.`);
   }
-  console.log(`[GMVMAX] Saved: ${JSON.stringify(result.liveGmvMax)}`);
+  console.log(`[${PREFIX}] Saved: ${JSON.stringify(result.liveGmvMax)}`);
 }
 
 async function enrichPlanIncrements(historyPath, result) {
   const previous = await readLatestRecordWithPlans(historyPath);
   const previousByKey = new Map((previous?.plans || []).map((plan) => [plan.account || plan.name, plan]));
+  const currentKeys = new Set((result.plans || []).map((plan) => plan.account || plan.name).filter(Boolean));
+
+  for (const [key, previousPlan] of previousByKey.entries()) {
+    if (currentKeys.has(key)) continue;
+    result.plans.push({
+      ...previousPlan,
+      intervalSpendIncrease: "0.00 MYR",
+      intervalOrderAmountIncrease: "0.00 MYR"
+    });
+  }
+
+  result.plans.sort((a, b) => accountRank(a.account || a.name) - accountRank(b.account || b.name));
+
   for (const plan of result.plans || []) {
     const previousPlan = previousByKey.get(plan.account || plan.name);
     const spendIncrease = previousPlan ? parseMoney(plan.totalSpend) - parseMoney(previousPlan.totalSpend) : 0;
@@ -448,6 +498,12 @@ async function enrichPlanIncrements(historyPath, result) {
   }
   result.liveGmvMax.newSpend = moneyText((result.plans || []).reduce((sum, plan) => sum + parseMoney(plan.intervalSpendIncrease), 0));
   result.liveGmvMax.newOrderAmount = moneyText((result.plans || []).reduce((sum, plan) => sum + parseMoney(plan.intervalOrderAmountIncrease), 0));
+}
+
+function accountRank(account) {
+  const order = ["YOUMILIER KLASIK", "YOUMILIER FASHION", "YOUMILIER"];
+  const index = order.indexOf(account);
+  return index === -1 ? order.length : index;
 }
 
 async function readLatestRecordWithPlans(filePath) {
