@@ -88,6 +88,20 @@ python3 scripts/gmvmax_float.py
 
 悬浮窗会显示最新一轮 `gmvmax-plan-records.csv` 数据，并每 30 秒刷新一次。
 
+## iPhone 手机 App
+
+推荐使用 PWA 手机版，不需要 App Store 审核，也不需要越狱。先在 Mac 上启动手机端服务：
+
+```bash
+open start_mobile_app.command
+```
+
+终端会显示类似 `iPhone URL: http://192.168.x.x:8788/` 的地址。把 iPhone 和这台 Mac 连到同一个 Wi-Fi 后，用 iPhone Safari 打开这个地址，然后点分享按钮，选择“添加到主屏幕”。之后桌面上会出现 `GMV Max` 图标，打开方式和普通 App 类似。
+
+手机端会每 30 秒读取一次 Mac 上最新的监测结果，显示三个账号的新增消耗、新增成交、新增 ROI、总消耗、总成交和总 ROI。
+
+如果要生成可安装的原生 iOS IPA，需要 Apple Developer 账号、签名证书和设备 UDID 或 TestFlight/App Store 发布流程；代码本身无法绕过 iOS 的签名安装限制。
+
 ## 如果页面字段没有识别出来
 
 TikTok Ads 后台页面会变动。脚本会先通过文字标签自动查找这些字段：
