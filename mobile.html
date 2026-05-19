@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="GMV Max" />
+  <link rel="manifest" href="/mobile.webmanifest" />
+  <title>GMV Max</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f172a;
+      --panel: #111827;
+      --line: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #fbbf24;
+      --blue: #38bdf8;
+      --violet: #a78bfa;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .app {
+      padding: calc(env(safe-area-inset-top) + 14px) 14px calc(env(safe-area-inset-bottom) + 18px);
+    }
+
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .tile,
+    .card {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+    }
+
+    .tile {
+      padding: 10px;
+      min-width: 0;
+    }
+
+    .label {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 5px;
+    }
+
+    .metric {
+      display: flex;
+      align-items: baseline;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .value {
+      font-size: 16px;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }
+
+    .diff {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 3px;
+      overflow-wrap: anywhere;
+    }
+
+    .arrow {
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .up { color: var(--green); }
+    .down { color: var(--red); }
+    .flat { color: var(--muted); }
+    .spend { color: var(--yellow); }
+    .gmv { color: var(--blue); }
+    .roi { color: var(--violet); }
+    .total { color: #e5e7eb; }
+
+    .cards {
+      display: grid;
+      gap: 10px;
+    }
+
+    .card {
+      padding: 12px;
+    }
+
+    .account {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .account strong {
+      font-size: 15px;
+      overflow-wrap: anywhere;
+    }
+
+    .campaign {
+      color: var(--muted);
+      font-size: 11px;
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .error,
+    .empty {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      color: var(--muted);
+      background: var(--panel);
+      line-height: 1.5;
+    }
+
+    .error { color: #fecaca; }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>LIVE GMV Max</h1>
+      <div class="status" id="status">读取中...</div>
+    </header>
+    <section id="app"></section>
+  </main>
+
+  <script>
+    const app = document.getElementById("app");
+    const status = document.getElementById("status");
+    const refreshMs = 30000;
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/mobile-sw.js").catch(() => {});
+    }
+
+    function money(value) {
+      return `${Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MYR`;
+    }
+
+    function roi(value) {
+      return Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function arrow(metric) {
+      const symbol = metric.direction === "up" ? "▲" : metric.direction === "down" ? "▼" : "→";
+      return `<span class="arrow ${metric.direction}">${symbol}</span>`;
+    }
+
+    function metricBlock(label, metric, cls, formatter) {
+      return `
+        <div class="tile">
+          <span class="label">${label}</span>
+          <div class="metric">
+            <span class="value ${cls}">${formatter(metric.value)}</span>
+            ${arrow(metric)}
+          </div>
+          <span class="diff">${metric.diff >= 0 ? "+" : ""}${formatter(metric.diff)}</span>
+        </div>
+      `;
+    }
+
+    function render(data) {
+      status.textContent = data.updatedAt ? `更新 ${new Date(data.updatedAt).toLocaleTimeString("zh-CN", { hour12: false })}` : "暂无时间";
+
+      if (!data.accounts.length) {
+        app.innerHTML = `<div class="empty">还没有采集到账号数据，等待 Mac 后台脚本写入 CSV。</div>`;
+        return;
+      }
+
+      const summary = `
+        <div class="summary">
+          ${metricBlock("新增消耗", data.summary.intervalSpend, "spend", money)}
+          ${metricBlock("新增成交", data.summary.intervalOrder, "gmv", money)}
+          ${metricBlock("新增 ROI", data.summary.intervalRoi, "roi", roi)}
+          ${metricBlock("总 ROI", data.summary.totalRoi, "roi", roi)}
+        </div>
+      `;
+
+      const cards = data.accounts.map(account => `
+        <article class="card">
+          <div class="account">
+            <strong>${account.account}</strong>
+            <span class="campaign">${account.campaign || ""}</span>
+          </div>
+          <div class="grid">
+            ${metricBlock("新增消耗", account.intervalSpend, "spend", money)}
+            ${metricBlock("新增成交", account.intervalOrder, "gmv", money)}
+            ${metricBlock("新增 ROI", account.intervalRoi, "roi", roi)}
+            ${metricBlock("总 ROI", account.totalRoi, "roi", roi)}
+            ${metricBlock("总消耗", account.totalSpend, "total", money)}
+            ${metricBlock("总成交", account.totalOrder, "total", money)}
+          </div>
+        </article>
+      `).join("");
+
+      app.innerHTML = `${summary}<div class="cards">${cards}</div>`;
+    }
+
+    async function load() {
+      try {
+        const response = await fetch(`/api/latest?t=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        render(await response.json());
+      } catch (error) {
+        status.textContent = "读取失败";
+        app.innerHTML = `<div class="error">无法读取数据：${error.message}</div>`;
+      }
+    }
+
+    load();
+    setInterval(load, refreshMs);
+  </script>
+</body>
+</html>
