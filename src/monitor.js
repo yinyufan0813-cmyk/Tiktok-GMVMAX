@@ -123,11 +123,14 @@ async function getBrowserSession(config) {
   }
 
   try {
-    const targets = await fetchCdpTargets(config.cdpEndpoint);
     return {
       kind: "cdp",
-      pages: async () => targets.filter((target) => target.type === "page").map((target) => new CdpPageTarget(config.cdpEndpoint, target)),
+      pages: async () => {
+        const targets = await fetchCdpTargets(config.cdpEndpoint);
+        return targets.filter((target) => target.type === "page").map((target) => new CdpPageTarget(config.cdpEndpoint, target));
+      },
       connectPage: async (target) => CdpPage.connect(target),
+      openTarget: async (url) => openCdpTarget(config.cdpEndpoint, url),
       close: async () => {}
     };
   } catch (error) {
@@ -156,21 +159,29 @@ async function printOpenTabs(browserSession) {
 }
 
 async function findTargetPage(browserSession, config) {
-  const pages = (await browserSession.pages()).filter((page) => isInspectablePage(page));
+  let pages = (await browserSession.pages()).filter((page) => isInspectablePage(page));
+  if (pages.length === 0 && config.url && browserSession.openTarget) {
+    console.log("[GMVMAX] No inspectable tabs found. Opening configured GMV Max URL...");
+    await browserSession.openTarget(refreshDashboardUrl(config.url) || config.url);
+    await wait(5_000);
+    pages = (await browserSession.pages()).filter((page) => isInspectablePage(page));
+  }
   if (pages.length === 0) {
     throw new Error("No inspectable Chrome tabs found.");
   }
 
-  const scored = [];
-  for (const page of pages) {
-    const title = await safeTitle(page);
-    const url = page.url();
-    const score = scorePage({ title, url }, config);
-    scored.push({ page, title, url, score });
-  }
-
+  let scored = await scorePages(pages, config);
   scored.sort((a, b) => b.score - a.score);
-  const best = scored[0];
+  let best = scored[0];
+  if ((!best || best.score <= 0) && config.url && browserSession.openTarget) {
+    console.log("[GMVMAX] Could not find the GMV Max live tab. Opening configured URL...");
+    await browserSession.openTarget(refreshDashboardUrl(config.url) || config.url);
+    await wait(5_000);
+    pages = (await browserSession.pages()).filter((page) => isInspectablePage(page));
+    scored = await scorePages(pages, config);
+    scored.sort((a, b) => b.score - a.score);
+    best = scored[0];
+  }
   if (!best || best.score <= 0) {
     const tabList = scored.map((item, index) => `[${index + 1}] ${item.title} | ${item.url}`).join("\n");
     throw new Error(`Could not find the TikTok GMV Max tab. Open tabs:\n${tabList}`);
@@ -182,6 +193,17 @@ async function findTargetPage(browserSession, config) {
   const page = await browserSession.connectPage(best.page);
   await page.bringToFront().catch(() => {});
   return page;
+}
+
+async function scorePages(pages, config) {
+  const scored = [];
+  for (const page of pages) {
+    const title = await safeTitle(page);
+    const url = page.url();
+    const score = scorePage({ title, url }, config);
+    scored.push({ page, title, url, score });
+  }
+  return scored;
 }
 
 function isInspectablePage(page) {
@@ -226,6 +248,23 @@ function safelyParseUrl(value) {
   }
 }
 
+function refreshDashboardUrl(currentUrl, fallbackUrl = "") {
+  const parsed = safelyParseUrl(currentUrl) || safelyParseUrl(fallbackUrl);
+  if (!parsed || parsed.host !== "ads.tiktok.com" || !parsed.pathname.includes("/gmv-max/dashboard")) {
+    return null;
+  }
+
+  const now = String(Date.now());
+  parsed.searchParams.set("is_refresh_page", "true");
+  parsed.searchParams.set("activated_tab_id", "2");
+  parsed.searchParams.set("type", "live");
+  parsed.searchParams.set("live_campaign_page", parsed.searchParams.get("live_campaign_page") || "1");
+  parsed.searchParams.set("live_campaign_page_size", parsed.searchParams.get("live_campaign_page_size") || "10");
+  parsed.searchParams.set("list_start_date", now);
+  parsed.searchParams.set("list_end_date", now);
+  return parsed.toString();
+}
+
 function isTikTokLoginPage(url) {
   const parsed = safelyParseUrl(url);
   return parsed?.host === "ads.tiktok.com" && parsed.pathname.includes("/login");
@@ -236,6 +275,15 @@ async function fetchCdpTargets(endpoint) {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Chrome DevTools returned ${response.status} ${response.statusText}`);
+  }
+  return response.json();
+}
+
+async function openCdpTarget(endpoint, targetUrl) {
+  const url = `${endpoint.replace(/\/$/, "")}/json/new?${encodeURIComponent(targetUrl)}`;
+  const response = await fetch(url, { method: "PUT" });
+  if (!response.ok) {
+    throw new Error(`Chrome DevTools could not open target: ${response.status} ${response.statusText}`);
   }
   return response.json();
 }
@@ -321,6 +369,11 @@ class CdpPage {
     await this.waitForTimeout(8000);
   }
 
+  async goto(url) {
+    await this.command("Page.navigate", { url });
+    await this.waitForTimeout(8000);
+  }
+
   async waitForTimeout(ms) {
     await wait(ms);
   }
@@ -356,7 +409,15 @@ async function collectOnce(page, config, outputDir) {
   const timestamp = new Date().toISOString();
   console.log(`[GMVMAX] ${timestamp} refreshing dashboard...`);
 
-  await page.reload({ waitUntil: "networkidle", timeout: 120_000 });
+  const targetUrl = refreshDashboardUrl(page.url(), config.url);
+  if (targetUrl) {
+    console.log("[GMVMAX] Navigating to current LIVE GMV Max window...");
+    await page.goto(targetUrl, { waitUntil: "networkidle", timeout: 120_000 }).catch(async () => {
+      await page.goto(targetUrl);
+    });
+  } else {
+    await page.reload({ waitUntil: "networkidle", timeout: 120_000 });
+  }
 
   await acceptVisibleDialogs(page);
   await page.waitForTimeout(5000);
@@ -553,8 +614,7 @@ function parseMoney(value) {
 
 function moneyText(value) {
   return `${Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MYR`;
-}
-
+}\n
 async function acceptVisibleDialogs(page) {
   const buttons = ["Accept all", "Accept", "同意", "接受", "我知道了", "Got it"];
   await page
