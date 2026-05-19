@@ -20,8 +20,9 @@ then
   /usr/bin/python3 -m http.server $PORT --bind 127.0.0.1 >/tmp/gmvmax-dashboard-server.log 2>&1 &
 fi
 sleep 1
-if [ -f "$LOCK" ]; then
-  exit 0
-fi
+
+# 旧锁文件可能会留下来，导致脚本退出但窗口没有打开。这里每次都重新拉起或激活窗口。
+rm -f "$LOCK"
 open -na "Google Chrome" --args --app="http://127.0.0.1:$PORT/dashboard.html" --window-size=1220,420 --window-position=60,80
+/usr/bin/osascript -e 'tell application "Google Chrome" to activate' >/dev/null 2>&1
 date > "$LOCK"
