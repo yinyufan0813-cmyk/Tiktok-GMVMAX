@@ -3,6 +3,12 @@ SCRIPT_DIR="${0:A:h}"
 cd "$SCRIPT_DIR" || exit 1
 PORT=8787
 LOCK=/tmp/gmvmax-dashboard-window.lock
+
+# 打开悬浮窗时，同步确保专用 Chrome 已启动，并立即采集一次数据。
+if [ -x "$SCRIPT_DIR/scripts/gmvmax-monitor.sh" ]; then
+  "$SCRIPT_DIR/scripts/gmvmax-monitor.sh" >/tmp/gmvmax-dashboard-monitor.log 2>&1 &
+fi
+
 if ! /usr/bin/python3 - <<'PY'
 import socket
 sock = socket.socket()
