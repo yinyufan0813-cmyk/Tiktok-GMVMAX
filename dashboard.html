@@ -118,6 +118,20 @@
       text-overflow: ellipsis;
     }
 
+    tr.budget-alert {
+      background: rgba(251, 191, 36, 0.18);
+      box-shadow: inset 3px 0 0 rgba(251, 191, 36, 0.95);
+    }
+
+    tr.budget-alert td,
+    tr.budget-alert .diff {
+      color: #fff7ed;
+    }
+
+    tr.budget-alert .value {
+      text-shadow: 0 0 8px rgba(251, 191, 36, 0.55);
+    }
+
     .summary {
       display: grid;
       grid-template-columns: repeat(6, 1fr);
@@ -327,6 +341,12 @@
       `;
     }
 
+    function isBudgetAlert(row) {
+      const totalSpend = moneyNumber(row.total_spend);
+      const totalBudget = moneyNumber(row.total_budget);
+      return totalBudget > 0 && totalSpend >= totalBudget * 0.7;
+    }
+
     function render(rows) {
       const app = document.getElementById("app");
       const status = document.getElementById("status");
@@ -386,8 +406,9 @@
               const previousTotalRoi = previousRow
                 ? roi(moneyNumber(previousRow.total_order_amount), moneyNumber(previousRow.total_spend))
                 : null;
+              const alertClass = isBudgetAlert(row) ? " class=\"budget-alert\"" : "";
               return `
-                <tr>
+                <tr${alertClass}>
                   <td class="account">${key}</td>
                   <td>${metric(row, previousRow, "interval_spend_increase", "spend")}</td>
                   <td>${metric(row, previousRow, "interval_order_amount_increase", "gmv")}</td>
