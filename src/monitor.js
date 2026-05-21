@@ -564,6 +564,10 @@ async function collectOnce(page, config, outputDir) {
         title: document.title,
         metrics,
         plans: parsedPlans,
+        pageState: {
+          hasSystemError: /System error|No campaigns found/i.test(bodyText),
+          planCount: parsedPlans.length
+        },
         bodyText
       };
     },
@@ -575,8 +579,19 @@ async function collectOnce(page, config, outputDir) {
     url: record.url,
     title: record.title,
     liveGmvMax: record.metrics,
-    plans: record.plans
+    plans: record.plans,
+    pageState: record.pageState
   };
+
+  if (!Array.isArray(result.plans) || result.plans.length === 0) {
+    const safeStamp = timestamp.replace(/[:.]/g, "-");
+    await fs.writeFile(path.join(outputDir, `debug-${safeStamp}.txt`), record.bodyText, "utf8");
+    await page.screenshot({ path: path.join(outputDir, `debug-${safeStamp}.png`), fullPage: true });
+    console.warn(
+      `[GMVMAX] No LIVE GMV Max plans found; skipped writing stale data. Page state: ${JSON.stringify(result.pageState)}`
+    );
+    return;
+  }
 
   await enrichPlanIncrements(path.join(outputDir, "gmvmax-records.jsonl"), result);
   await appendJsonl(path.join(outputDir, "gmvmax-records.jsonl"), result);
@@ -604,13 +619,15 @@ async function enrichPlanIncrements(historyPath, result) {
   );
   const currentAccounts = new Set((result.plans || []).map((plan) => plan.account).filter(Boolean));
 
-  for (const [account, previousPlan] of previousByAccount.entries()) {
-    if (currentAccounts.has(account)) continue;
-    result.plans.push({
-      ...previousPlan,
-      intervalSpendIncrease: "0.00 MYR",
-      intervalOrderAmountIncrease: "0.00 MYR"
-    });
+  if (currentAccounts.size > 0) {
+    for (const [account, previousPlan] of previousByAccount.entries()) {
+      if (currentAccounts.has(account)) continue;
+      result.plans.push({
+        ...previousPlan,
+        intervalSpendIncrease: "0.00 MYR",
+        intervalOrderAmountIncrease: "0.00 MYR"
+      });
+    }
   }
 
   result.plans.sort((a, b) => accountRank(a.account) - accountRank(b.account));
@@ -718,6 +735,7 @@ async function appendPlanCsv(filePath, result) {
   }
 
   for (const plan of result.plans || []) {
+    if (!String(plan.account || "").trim()) continue;
     const row = [
       result.timestamp,
       plan.account,
