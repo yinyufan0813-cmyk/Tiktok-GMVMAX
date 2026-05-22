@@ -8,6 +8,7 @@
   "outputDir": "./logs",
   "locale": "zh-CN",
   "timezoneId": "Asia/Kuala_Lumpur",
+  "accountOrder": ["YOUMILIER KLASIK", "YOUMILIER FASHION", "YOUMILIER"],
   "tabMatch": {
     "urlIncludes": ["ads.tiktok.com", "gmv-max/dashboard", "type=live"],
     "titleIncludes": ["GMV"]
@@ -18,6 +19,7 @@
     "newSpend": "",
     "newOrderAmount": "",
     "totalSpend": "",
-    "totalOrderAmount": ""
+    "totalOrderAmount": "",
+    "totalBudget": ""
   }
 }
