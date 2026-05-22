@@ -130,7 +130,8 @@ export function extractGmvMaxRecord({ labels, selectors }) {
     newSpend: labelMetrics.newSpend || null,
     newOrderAmount: labelMetrics.newOrderAmount || null,
     totalSpend: labelMetrics.totalSpend || englishMetrics.totalSpend,
-    totalOrderAmount: labelMetrics.totalOrderAmount || englishMetrics.totalOrderAmount
+    totalOrderAmount: labelMetrics.totalOrderAmount || englishMetrics.totalOrderAmount,
+    totalBudget: labelMetrics.totalBudget || parsedPlans.find((plan) => plan.totalBudget)?.totalBudget || null
   };
 
   return {
