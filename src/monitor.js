@@ -60,6 +60,7 @@ async function main() {
 
   const page = await findTargetPage(browserSession, config);
   console.log(`[GMVMAX] Attached tab: ${await page.title()} | ${page.url()}`);
+
   console.log(`[GMVMAX] Started. Refresh interval: ${config.intervalMinutes} minute(s).`);
   console.log("[GMVMAX] Monitoring the existing Chrome tab. Keep that tab open while the script runs.");
 
@@ -422,7 +423,7 @@ async function collectOnce(page, config, outputDir) {
   }
 
   await acceptVisibleDialogs(page);
-  await page.waitForTimeout(5000);
+  await waitForLivePlans(page);
 
   const record = await page.evaluate(
     ({ labels, selectors }) => {
@@ -475,14 +476,14 @@ async function collectOnce(page, config, outputDir) {
         const rowNodes = Array.from(document.querySelectorAll("tr, [role='row']"));
         return rowNodes
           .map((row) => textOf(row))
-          .filter((rowText) => rowText.includes("recommendation") && rowText.includes(" ID:") && rowText.includes("MYR"))
+          .filter((rowText) => rowText.includes("LIVE GMV Max_") && rowText.includes(" ID:") && rowText.includes("MYR"))
           .map((rowText, index) => {
             const values = Array.from(rowText.matchAll(/([\d,]+(?:\.\d+)?)\s+MYR/g)).map((item) => parseNumber(item[1]));
             if (values.length < 6) return null;
 
-            const activeIndex = rowText.indexOf(" Active ");
-            const name = activeIndex > 0 ? rowText.slice(0, activeIndex).trim() : `live-plan-${index + 1}`;
-            const account = rowText.match(/\d+\s+recommendations?\s+(.*?)\s+ID:/i)?.[1]?.trim() || null;
+            const activeMatch = rowText.match(/\s(?:Active|已生效)\s/);
+            const name = activeMatch?.index > 0 ? rowText.slice(0, activeMatch.index).trim() : `live-plan-${index + 1}`;
+            const account = rowText.match(/\d+\s+(?:recommendations?|条建议)\s+(.*?)\s+ID:/i)?.[1]?.trim() || null;
 
             return {
               index: index + 1,
@@ -511,9 +512,11 @@ async function collectOnce(page, config, outputDir) {
       function englishOverviewMetrics(bodyText) {
         const cost = bodyText.match(/\bCost\s+([\d,]+(?:\.\d+)?)\s+MYR\s+vs last/i);
         const grossRevenue = bodyText.match(/\bGross revenue \(Current shop\)\s+([\d,]+(?:\.\d+)?)\s+MYR\s+vs last/i);
+        const chineseCost = bodyText.match(/(?:概览[\s\S]*?)?成本\s+([\d,]+(?:\.\d+)?)\s+MYR\s+较近/);
+        const chineseGrossRevenue = bodyText.match(/总收入（当前店铺）\s+([\d,]+(?:\.\d+)?)\s+MYR\s+较近/);
         return {
-          totalSpend: cost?.[1] ? `${cost[1]} MYR` : null,
-          totalOrderAmount: grossRevenue?.[1] ? `${grossRevenue[1]} MYR` : null
+          totalSpend: cost?.[1] ? `${cost[1]} MYR` : chineseCost?.[1] ? `${chineseCost[1]} MYR` : null,
+          totalOrderAmount: grossRevenue?.[1] ? `${grossRevenue[1]} MYR` : chineseGrossRevenue?.[1] ? `${chineseGrossRevenue[1]} MYR` : null
         };
       }
 
@@ -528,8 +531,8 @@ async function collectOnce(page, config, outputDir) {
           if (values.length < 6) continue;
 
           const grossRevenueIndex = values.length >= 7 ? values.length - 5 : values.length - 4;
-          const planName = rowText.match(/^(.*?)\s+Active\s+/)?.[1] || `live-plan-${rows.length + 1}`;
-          const account = rowText.match(/recommendations?\s+(.*?)\s+ID:/i)?.[1] || null;
+          const planName = rowText.match(/^(.*?)\s+(?:Active|已生效)\s+/)?.[1] || `live-plan-${rows.length + 1}`;
+          const account = rowText.match(/(?:recommendations?|条建议)\s+(.*?)\s+ID:/i)?.[1]?.trim() || null;
           rows.push({
             index: rows.length + 1,
             account,
@@ -608,6 +611,29 @@ async function collectOnce(page, config, outputDir) {
   }
 
   console.log(`[GMVMAX] Saved: ${JSON.stringify(result.liveGmvMax)}`);
+}
+
+async function waitForLivePlans(page, timeoutMs = 60_000) {
+  const startedAt = Date.now();
+  let lastState = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    lastState = await page
+      .evaluate(() => {
+        const bodyText = (document.body?.innerText || document.body?.textContent || "").replace(/\s+/g, " ");
+        return {
+          hasPlan: bodyText.includes("LIVE GMV Max_") && bodyText.includes("MYR") && bodyText.includes(" ID:"),
+          hasEmptyState: /No campaigns found|暂无|没有广告计划|System error/i.test(bodyText),
+          length: bodyText.length
+        };
+      })
+      .catch(() => null);
+
+    if (lastState?.hasPlan || lastState?.hasEmptyState) return lastState;
+    await page.waitForTimeout(3000);
+  }
+
+  console.warn(`[GMVMAX] Timed out waiting for LIVE GMV Max plans. Last state: ${JSON.stringify(lastState)}`);
+  return lastState;
 }
 
 async function enrichPlanIncrements(historyPath, result) {
