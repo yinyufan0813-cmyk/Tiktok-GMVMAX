@@ -14,6 +14,7 @@ const DEFAULT_CONFIG = {
   outputDir: "./logs",
   locale: "zh-CN",
   timezoneId: "Asia/Kuala_Lumpur",
+  accountOrder: ["YOUMILIER KLASIK", "YOUMILIER FASHION", "YOUMILIER"],
   tabMatch: {
     urlIncludes: ["ads.tiktok.com", "gmv-max/dashboard", "type=live"],
     titleIncludes: ["GMV"]
@@ -97,6 +98,7 @@ function mergeConfig(base, override) {
       ...base.tabMatch,
       ...(override.tabMatch || {})
     },
+    accountOrder: Array.isArray(override.accountOrder) ? override.accountOrder : base.accountOrder,
     selectors: {
       ...base.selectors,
       ...(override.selectors || {})
@@ -368,14 +370,14 @@ class CdpPage {
     await this.command("Page.bringToFront");
   }
 
-  async reload() {
+  async reload(options = {}) {
     await this.command("Page.reload", { ignoreCache: true });
-    await this.waitForTimeout(8000);
+    await this.waitForTimeout(options.timeout ? Math.min(options.timeout, 8000) : 8000);
   }
 
-  async goto(url) {
+  async goto(url, options = {}) {
     await this.command("Page.navigate", { url });
-    await this.waitForTimeout(8000);
+    await this.waitForTimeout(options.timeout ? Math.min(options.timeout, 8000) : 8000);
   }
 
   async waitForTimeout(ms) {
@@ -450,7 +452,7 @@ async function collectOnce(page, config, outputDir) {
     return;
   }
 
-  await enrichPlanIncrements(path.join(outputDir, "gmvmax-records.jsonl"), result);
+  await enrichPlanIncrements(path.join(outputDir, "gmvmax-records.jsonl"), result, config.accountOrder);
   await appendJsonl(path.join(outputDir, "gmvmax-records.jsonl"), result);
   await appendCsv(path.join(outputDir, "gmvmax-records.csv"), result);
   await appendPlanCsv(path.join(outputDir, "gmvmax-plan-records.csv"), result);
@@ -490,7 +492,7 @@ async function waitForLivePlans(page, timeoutMs = 60_000) {
   return lastState;
 }
 
-async function enrichPlanIncrements(historyPath, result) {
+async function enrichPlanIncrements(historyPath, result, accountOrder = []) {
   const previous = await readLatestRecordWithPlans(historyPath);
   const previousByAccount = new Map(
     (previous?.plans || [])
@@ -510,7 +512,7 @@ async function enrichPlanIncrements(historyPath, result) {
     }
   }
 
-  result.plans.sort((a, b) => accountRank(a.account) - accountRank(b.account));
+  result.plans.sort((a, b) => accountRank(a.account, accountOrder) - accountRank(b.account, accountOrder));
 
   for (const plan of result.plans || []) {
     const previousPlan = previousByAccount.get(plan.account);
@@ -530,10 +532,9 @@ async function enrichPlanIncrements(historyPath, result) {
   result.liveGmvMax.newOrderAmount = moneyText(intervalOrderAmount);
 }
 
-function accountRank(account) {
-  const order = ["YOUMILIER KLASIK", "YOUMILIER FASHION", "YOUMILIER"];
-  const index = order.indexOf(account);
-  return index === -1 ? order.length : index;
+function accountRank(account, accountOrder = []) {
+  const index = accountOrder.indexOf(account);
+  return index === -1 ? accountOrder.length : index;
 }
 
 async function readLatestRecordWithPlans(filePath) {
@@ -589,17 +590,30 @@ async function appendCsv(filePath, result) {
     result.liveGmvMax.newOrderAmount,
     result.liveGmvMax.totalSpend,
     result.liveGmvMax.totalOrderAmount,
-    result.url
+    result.url,
+    result.liveGmvMax.totalBudget
   ].map(csvCell);
 
   if (!exists) {
     await fs.appendFile(
       filePath,
-      "timestamp,new_spend,new_order_amount,total_spend,total_order_amount,url\n",
+      "timestamp,new_spend,new_order_amount,total_spend,total_order_amount,url,total_budget\n",
       "utf8"
     );
+  } else {
+    await ensureSummaryCsvHasBudgetColumn(filePath);
   }
   await fs.appendFile(filePath, `${row.join(",")}\n`, "utf8");
+}
+
+async function ensureSummaryCsvHasBudgetColumn(filePath) {
+  const content = await fs.readFile(filePath, "utf8");
+  const lineEndIndex = content.indexOf("\n");
+  const header = lineEndIndex === -1 ? content : content.slice(0, lineEndIndex);
+  if (header.split(",").includes("total_budget")) return;
+
+  const rest = lineEndIndex === -1 ? "" : content.slice(lineEndIndex);
+  await fs.writeFile(filePath, `${header},total_budget${rest}`, "utf8");
 }
 
 async function appendPlanCsv(filePath, result) {
