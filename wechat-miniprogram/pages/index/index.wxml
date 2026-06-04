@@ -1,0 +1,113 @@
+<view class="page">
+  <view class="header">
+    <view>
+      <view class="title">LIVE GMV Max</view>
+      <view class="sub-title">TikTok Shop 监控面板</view>
+    </view>
+    <view class="status {{statusClass}}">{{statusText}}</view>
+  </view>
+
+  <view wx:if="{{error}}" class="error">
+    <view class="error-title">读取失败</view>
+    <view class="error-text">{{error}}</view>
+    <button class="refresh-btn" bindtap="loadData">重新读取</button>
+  </view>
+
+  <block wx:else>
+    <view class="summary">
+      <view class="tile">
+        <view class="label">新增消耗</view>
+        <view class="metric">
+          <text class="value spend">{{summary.intervalSpend.text}}</text>
+          <text class="arrow {{summary.intervalSpend.direction}}">{{summary.intervalSpend.arrow}}</text>
+        </view>
+        <view class="diff">{{summary.intervalSpend.diffText}}</view>
+      </view>
+      <view class="tile">
+        <view class="label">新增成交</view>
+        <view class="metric">
+          <text class="value gmv">{{summary.intervalOrder.text}}</text>
+          <text class="arrow {{summary.intervalOrder.direction}}">{{summary.intervalOrder.arrow}}</text>
+        </view>
+        <view class="diff">{{summary.intervalOrder.diffText}}</view>
+      </view>
+      <view class="tile">
+        <view class="label">新增 ROI</view>
+        <view class="metric">
+          <text class="value roi">{{summary.intervalRoi.text}}</text>
+          <text class="arrow {{summary.intervalRoi.direction}}">{{summary.intervalRoi.arrow}}</text>
+        </view>
+        <view class="diff">{{summary.intervalRoi.diffText}}</view>
+      </view>
+      <view class="tile">
+        <view class="label">总 ROI</view>
+        <view class="metric">
+          <text class="value roi">{{summary.totalRoi.text}}</text>
+          <text class="arrow {{summary.totalRoi.direction}}">{{summary.totalRoi.arrow}}</text>
+        </view>
+        <view class="diff">{{summary.totalRoi.diffText}}</view>
+      </view>
+    </view>
+
+    <view wx:if="{{!accounts.length}}" class="empty">暂无账号数据，等待后台 CSV 写入。</view>
+
+    <view class="cards">
+      <view wx:for="{{accounts}}" wx:key="account" class="card">
+        <view class="account-row">
+          <view class="account-name">{{item.account}}</view>
+          <view class="campaign">{{item.campaign}}</view>
+        </view>
+        <view class="grid">
+          <view class="mini-tile">
+            <view class="label">新增消耗</view>
+            <view class="metric">
+              <text class="value spend">{{item.intervalSpend.text}}</text>
+              <text class="arrow {{item.intervalSpend.direction}}">{{item.intervalSpend.arrow}}</text>
+            </view>
+            <view class="diff">{{item.intervalSpend.diffText}}</view>
+          </view>
+          <view class="mini-tile">
+            <view class="label">新增成交</view>
+            <view class="metric">
+              <text class="value gmv">{{item.intervalOrder.text}}</text>
+              <text class="arrow {{item.intervalOrder.direction}}">{{item.intervalOrder.arrow}}</text>
+            </view>
+            <view class="diff">{{item.intervalOrder.diffText}}</view>
+          </view>
+          <view class="mini-tile">
+            <view class="label">新增 ROI</view>
+            <view class="metric">
+              <text class="value roi">{{item.intervalRoi.text}}</text>
+              <text class="arrow {{item.intervalRoi.direction}}">{{item.intervalRoi.arrow}}</text>
+            </view>
+            <view class="diff">{{item.intervalRoi.diffText}}</view>
+          </view>
+          <view class="mini-tile">
+            <view class="label">总 ROI</view>
+            <view class="metric">
+              <text class="value roi">{{item.totalRoi.text}}</text>
+              <text class="arrow {{item.totalRoi.direction}}">{{item.totalRoi.arrow}}</text>
+            </view>
+            <view class="diff">{{item.totalRoi.diffText}}</view>
+          </view>
+          <view class="mini-tile">
+            <view class="label">总消耗</view>
+            <view class="metric">
+              <text class="value total">{{item.totalSpend.text}}</text>
+              <text class="arrow {{item.totalSpend.direction}}">{{item.totalSpend.arrow}}</text>
+            </view>
+            <view class="diff">{{item.totalSpend.diffText}}</view>
+          </view>
+          <view class="mini-tile">
+            <view class="label">总成交</view>
+            <view class="metric">
+              <text class="value total">{{item.totalOrder.text}}</text>
+              <text class="arrow {{item.totalOrder.direction}}">{{item.totalOrder.arrow}}</text>
+            </view>
+            <view class="diff">{{item.totalOrder.diffText}}</view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>

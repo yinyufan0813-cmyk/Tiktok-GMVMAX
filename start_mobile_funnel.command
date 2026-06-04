@@ -5,7 +5,7 @@ SCRIPT_DIR="${0:A:h}"
 cd "$SCRIPT_DIR"
 
 PORT="${GMVMAX_MOBILE_PORT:-8788}"
-HOSTNAME="${GMVMAX_TAILSCALE_HOSTNAME:-youmigmvmax}"
+HOSTNAME="${GMVMAX_TAILSCALE_HOSTNAME:-youmigmvmax2}"
 SOCKET_DIR="${HOME}/.tailscale-gmvmax"
 SOCKET_PATH="${SOCKET_DIR}/tailscaled.sock"
 TAILSCALE_BIN="${TAILSCALE_BIN:-/opt/homebrew/opt/tailscale/bin/tailscale}"
@@ -20,12 +20,13 @@ fi
 
 if ! pgrep -f "tailscaled.*${SOCKET_PATH}" >/dev/null 2>&1; then
   echo "Starting Tailscale userspace daemon..."
-  "$TAILSCALED_BIN" \
+  /usr/bin/nohup "$TAILSCALED_BIN" \
     --tun=userspace-networking \
     --statedir="$SOCKET_DIR" \
     --socket="$SOCKET_PATH" \
     > logs/tailscaled-mobile.out.log \
     2> logs/tailscaled-mobile.err.log &
+  disown
   sleep 3
 fi
 
@@ -39,7 +40,9 @@ if ! lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
   sleep 2
 fi
 
-"$TAILSCALE_BIN" --socket="$SOCKET_PATH" funnel --bg --yes "$PORT"
+"$TAILSCALE_BIN" --socket="$SOCKET_PATH" serve reset >/dev/null 2>&1 || true
+"$TAILSCALE_BIN" --socket="$SOCKET_PATH" funnel reset >/dev/null 2>&1 || true
+"$TAILSCALE_BIN" --socket="$SOCKET_PATH" funnel --bg --yes --https=443 "$PORT"
 
 echo ""
 echo "Mobile panel is running:"

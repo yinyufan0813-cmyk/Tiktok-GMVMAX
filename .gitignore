@@ -8,3 +8,5 @@ logs/*.png
 logs/*.html
 logs/*.txt
 !logs/.gitkeep
+tmp-whatsapp-inspect/
+whatsapp-group-reports-*/
