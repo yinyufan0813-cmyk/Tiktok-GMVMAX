@@ -1,0 +1,6 @@
+export GMVMAX_STORAGE_MODE="appsScript"
+export GMVMAX_APPS_SCRIPT_URL="https://script.google.com/macros/s/AKfycbzwda-czjme7PVG1CBkUH9OiIkI7Bi_Djks2eSY2_X1ZnAEjcjfvutvgNz50PJap6hG/exec"
+export GMVMAX_APPS_SCRIPT_TOKEN="ec920266c4d443c162ff2dfad1ee322dbdbf5323279c3118"
+export GMVMAX_APPS_SCRIPT_SECRET="ec920266c4d443c162ff2dfad1ee322dbdbf5323279c3118"
+export GMVMAX_LOCAL_PERSISTENCE="0"
+export GMVMAX_REMOTE_STRICT="1"

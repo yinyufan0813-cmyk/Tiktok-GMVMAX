@@ -6,9 +6,26 @@
   "headless": false,
   "profileDir": "./chrome-profile",
   "outputDir": "./logs",
+  "storage": {
+    "mode": "local",
+    "localPersistence": true,
+    "strict": false,
+    "appsScript": {
+      "webAppUrl": "",
+      "token": "",
+      "batchMaxRecords": 50,
+      "batchMaxBytes": 900000
+    },
+    "googleSheets": {
+      "planRecordsSpreadsheetId": "",
+      "planRecordsSheetName": "plan_records",
+      "summaryRecordsSpreadsheetId": "",
+      "summaryRecordsSheetName": "summary_records"
+    }
+  },
   "locale": "zh-CN",
   "timezoneId": "Asia/Kuala_Lumpur",
-  "accountOrder": ["YOUMILIER KLASIK", "YOUMILIER FASHION", "YOUMILIER"],
+  "accountOrder": ["YOUMILIER KLASIK", "YOUMILIER FASHION", "YOUMILIER", "YOUMI OOTD"],
   "tabMatch": {
     "urlIncludes": ["ads.tiktok.com", "gmv-max/dashboard", "type=live"],
     "titleIncludes": ["GMV"]
@@ -21,5 +38,22 @@
     "totalSpend": "",
     "totalOrderAmount": "",
     "totalBudget": ""
+  },
+  "materialMonitor": {
+    "url": "",
+    "cdpEndpoint": "http://127.0.0.1:9224",
+    "profileDir": "./chrome-profile-material",
+    "outputPrefix": "material",
+    "waitSignals": ["Material", "素材", "Creative", "创意", "Video", "视频", "GMV Max", "ROI"],
+    "tabMatch": {
+      "urlIncludes": ["gmv-max/dashboard", "type=product", "material", "creative", "asset", "video", "campaign"],
+      "titleIncludes": ["GMV", "Material", "素材", "Creative", "创意", "Video", "视频"]
+    },
+    "selectors": {
+      "rows": "",
+      "name": "",
+      "status": "",
+      "headers": []
+    }
   }
 }

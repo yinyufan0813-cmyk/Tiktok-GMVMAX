@@ -181,9 +181,14 @@
     const app = document.getElementById("app");
     const status = document.getElementById("status");
     const refreshMs = 30000;
+    let refreshTimer = null;
 
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/mobile-sw.js").catch(() => {});
+      navigator.serviceWorker.getRegistrations()
+        .then(registrations => Promise.all(registrations.map(registration => registration.unregister())))
+        .then(() => caches?.keys?.())
+        .then(keys => keys ? Promise.all(keys.map(key => caches.delete(key))) : undefined)
+        .catch(() => {});
     }
 
     function money(value) {
@@ -213,7 +218,9 @@
     }
 
     function render(data) {
-      status.textContent = data.updatedAt ? `更新 ${new Date(data.updatedAt).toLocaleTimeString("zh-CN", { hour12: false })}` : "暂无时间";
+      status.textContent = data.updatedAt
+        ? `数据 ${new Date(data.updatedAt).toLocaleString("zh-CN", { hour12: false })} | 页面 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`
+        : `暂无时间 | 页面 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
 
       if (!data.accounts.length) {
         app.innerHTML = `<div class="empty">还没有采集到账号数据，等待 Mac 后台脚本写入 CSV。</div>`;
@@ -257,11 +264,19 @@
       } catch (error) {
         status.textContent = "读取失败";
         app.innerHTML = `<div class="error">无法读取数据：${error.message}</div>`;
+      } finally {
+        clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(load, refreshMs);
       }
     }
 
+    window.addEventListener("pageshow", load);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) load();
+    });
+    window.addEventListener("focus", load);
+
     load();
-    setInterval(load, refreshMs);
   </script>
 </body>
 </html>

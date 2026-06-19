@@ -3,12 +3,16 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
+import { googleSheetsStorageConfig, readPlanRowsFromGoogleSheets } from "./google-sheets-storage.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
+await loadRuntimeEnv(path.join(rootDir, ".env.gmvmax"));
 const port = Number(process.env.GMVMAX_MOBILE_PORT || 8788);
 const host = process.env.GMVMAX_MOBILE_HOST || "0.0.0.0";
-const csvPath = path.join(rootDir, "logs", "gmvmax-plan-records.csv");
+const dataDir = path.resolve(process.env.GMVMAX_DATA_DIR || process.env.GMVMAX_OUTPUT_DIR || path.join(rootDir, "logs"));
+const csvPath = path.join(dataDir, "gmvmax-plan-records.csv");
+const config = await loadConfig();
 
 const staticFiles = {
   "/": { file: "mobile.html", type: "text/html; charset=utf-8" },
@@ -74,11 +78,13 @@ function sum(rows, field) {
 }
 
 function buildPayload(rows) {
+  const allowedAccounts = allowedAccountSet(config.accountOrder);
+  const scopedRows = rows.filter(row => isAllowedAccount(row.account || row.campaign, allowedAccounts));
   const timestamps = [...new Set(rows.map(row => row.timestamp).filter(Boolean))];
   const currentTs = timestamps.at(-1) || null;
   const previousTs = timestamps.at(-2) || null;
-  const currentRows = rows.filter(row => row.timestamp === currentTs);
-  const previousRows = rows.filter(row => row.timestamp === previousTs);
+  const currentRows = scopedRows.filter(row => row.timestamp === currentTs);
+  const previousRows = scopedRows.filter(row => row.timestamp === previousTs);
   const previousByAccount = new Map(previousRows.map(row => [row.account || row.campaign, row]));
 
   const accounts = currentRows.map((row, index) => {
@@ -134,9 +140,70 @@ function buildPayload(rows) {
   };
 }
 
+function allowedAccountSet(accountOrder = []) {
+  const accounts = accountOrder.map((account) => String(account || "").trim()).filter(Boolean);
+  return accounts.length ? new Set(accounts) : null;
+}
+
+function isAllowedAccount(account, allowedAccounts) {
+  if (!allowedAccounts) return true;
+  return allowedAccounts.has(String(account || "").trim());
+}
+
 async function latestData() {
+  const storage = googleSheetsStorageConfig(config);
+  if (storage.enabled) {
+    try {
+      const rows = await readPlanRowsFromGoogleSheets(config);
+      if (rows) return buildPayload(rows);
+    } catch (error) {
+      if (storage.strict) throw error;
+      console.warn(`[GMVMAX] Google Sheets mobile read skipped: ${error.message}`);
+    }
+  }
+
   const text = await fs.readFile(csvPath, "utf8");
   return buildPayload(parseCsv(text));
+}
+
+async function loadConfig() {
+  const configPath = process.env.GMVMAX_CONFIG || path.join(rootDir, "config.json");
+  try {
+    const raw = await fs.readFile(configPath, "utf8");
+    const parsed = JSON.parse(raw);
+    return {
+      ...parsed,
+      storage: {
+        ...(parsed.storage || {}),
+        mode: process.env.GMVMAX_STORAGE_MODE || parsed.storage?.mode,
+        googleSheets: {
+          ...(parsed.storage?.googleSheets || {}),
+          planRecordsSpreadsheetId:
+            process.env.GMVMAX_GOOGLE_PLAN_SHEET_ID || parsed.storage?.googleSheets?.planRecordsSpreadsheetId,
+          planRecordsSheetName:
+            process.env.GMVMAX_GOOGLE_PLAN_TAB || parsed.storage?.googleSheets?.planRecordsSheetName
+        }
+      }
+    };
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    return {};
+  }
+}
+
+async function loadRuntimeEnv(filePath) {
+  try {
+    const text = await fs.readFile(filePath, "utf8");
+    for (const line of text.split(/\r?\n/)) {
+      const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)\s*$/);
+      if (!match) continue;
+      const [, key, rawValue] = match;
+      if (process.env[key]) continue;
+      process.env[key] = rawValue.replace(/^['"]|['"]$/g, "");
+    }
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
 }
 
 function localUrls() {

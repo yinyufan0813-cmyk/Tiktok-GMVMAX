@@ -179,6 +179,8 @@
   <script>
     const csvUrl = "./logs/gmvmax-plan-records.csv";
     const refreshMs = 30000;
+    const accountOrder = ["YOUMILIER KLASIK", "YOUMILIER FASHION", "YOUMILIER", "YOUMI OOTD"];
+    const allowedAccounts = new Set(accountOrder);
 
     function parseCsv(text) {
       const rows = [];
@@ -251,9 +253,8 @@
     }
 
     function accountRank(account) {
-      const order = ["YOUMILIER KLASIK", "YOUMILIER FASHION", "YOUMILIER"];
-      const index = order.indexOf(account);
-      return index === -1 ? order.length : index;
+      const index = accountOrder.indexOf(account);
+      return index === -1 ? accountOrder.length : index;
     }
 
     function hasAccount(row) {
@@ -262,7 +263,13 @@
 
     function isRealAccountKey(row, index) {
       const key = keyFor(row, index);
-      return hasAccount(row) && Boolean(key) && !key.startsWith("live-plan-") && !key.startsWith("账号 ");
+      return (
+        hasAccount(row) &&
+        Boolean(key) &&
+        allowedAccounts.has(key) &&
+        !key.startsWith("live-plan-") &&
+        !key.startsWith("账号 ")
+      );
     }
 
     function completeCurrentRows(rows, currentTs, currentRows) {

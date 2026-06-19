@@ -7,7 +7,7 @@
 - 总消耗
 - 总成交金额
 
-记录会写入：
+本地模式下记录会写入：
 
 - `logs/gmvmax-records.jsonl`
 - `logs/gmvmax-records.csv`
@@ -63,6 +63,55 @@ npm start
 脚本默认每 10 分钟刷新一次页面。要调整间隔，编辑 `config.json` 中的 `intervalMinutes`。
 
 如果确实想让脚本自己启动一个独立 Chrome，把 `config.json` 里的 `mode` 改成 `launch`。
+
+## Google Drive / Apps Script 远端存储
+
+要让采集数据直接进入 Google Drive，而不是继续写入本地 `logs/`：
+
+1. 打开 [Google Apps Script](https://script.google.com/)，新建项目。
+2. 把 `apps-script/gmvmax-receiver.gs` 的内容粘贴进去。
+3. 在 Script properties 设置 `GMVMAX_WEBHOOK_SECRET`，并按 `APPS_SCRIPT_SETUP.md` 设置归档文件夹和 Sheet ID。
+4. 点击 `Deploy` -> `New deployment`，类型选择 `Web app`。
+5. `Execute as` 选择自己，`Who has access` 选择 `Anyone`。
+6. 部署并授权后，把 Web App URL 和密钥放入 `.env.gmvmax` 或同名环境变量。
+
+远端模式环境变量示例：
+
+```sh
+export GMVMAX_STORAGE_MODE="appsScript"
+export GMVMAX_APPS_SCRIPT_URL="https://script.google.com/macros/s/AKfycbzwda-czjme7PVG1CBkUH9OiIkI7Bi_Djks2eSY2_X1ZnAEjcjfvutvgNz50PJap6hG/exec"
+export GMVMAX_APPS_SCRIPT_TOKEN="<与 GMVMAX_WEBHOOK_SECRET 相同的值>"
+export GMVMAX_APPS_SCRIPT_SECRET="<与 GMVMAX_WEBHOOK_SECRET 相同的值>"
+export GMVMAX_LOCAL_PERSISTENCE="0"
+export GMVMAX_REMOTE_STRICT="1"
+```
+
+`GMVMAX_LOCAL_PERSISTENCE=0` 会关闭业务记录、页面快照、网络证据和素材证据的本地落盘。进程锁等运行控制文件可能仍会短暂出现在本地；它们不是采集数据。未配置 Web App URL 时，脚本会自动回退本地缓存，避免丢失监测数据。
+
+Apps Script 会在 Google Drive 中创建/复用 `GMVMAX Drive Upload Archive` 文件夹，并按日期保存 JSONL 批次文件；summary 和 plan 行继续追加到配置的 Google Sheets。完整部署步骤见 `APPS_SCRIPT_SETUP.md`。
+
+## 素材排序/出价模型监测
+
+同一个 Chrome 扩展和 CDP 备份抓包也可以监测素材、创意、视频或详情页的外显排序逻辑。先在专用 Chrome 里打开素材/创意/视频相关页面，或把 `config.json` 的 `materialMonitor.url` 填成目标页面。
+
+素材监测默认使用独立 Chrome 调试端口 `9224` 和独立 profile `chrome-profile-material`，避免和 GMV Max 主监测的 `9222` 页面互相刷新。
+
+```bash
+npm run material:list-tabs
+npm run material:once
+npm run material
+npm run material:analyze
+```
+
+素材监测会写入：
+
+- `logs/material-records.jsonl`
+- `logs/material-records.csv`
+- `logs/material-page-snapshots.jsonl`
+- `logs/material-network-exchanges.jsonl`
+- `logs/material-ranking-bid-report.md`
+
+报告只验证外显排序、流量分配和出价代理信号；如果没有素材接口、delivery/bid/rank 预估接口或连续窗口增量，报告会把结论保持为 `needs_more_evidence`。
 
 ## 屏幕悬浮窗
 

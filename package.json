@@ -8,8 +8,13 @@
     "start": "node src/monitor.js",
     "once": "node src/monitor.js --once",
     "list-tabs": "node src/monitor.js --list-tabs",
+    "collector": "node src/network-collector.js",
+    "analyze": "node src/analyze-decisions.js",
+    "material": "node src/material-monitor.js",
+    "material:once": "node src/material-monitor.js --once",
+    "material:list-tabs": "node src/material-monitor.js --list-tabs",
+    "material:analyze": "node src/analyze-materials.js",
     "mobile": "node src/mobile-server.js",
-    "whatsapp-export": "node src/whatsapp-export.js",
     "install:browsers": "npx playwright install chromium"
   },
   "dependencies": {

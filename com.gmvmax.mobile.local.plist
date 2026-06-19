@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.gmvmax.mobile</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>src/mobile-server.js</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/macbookair/GMVMAX-auto</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>GMVMAX_MOBILE_PORT</key>
+    <string>8788</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/tmp/gmvmax-mobile.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/gmvmax-mobile.err.log</string>
+</dict>
+</plist>

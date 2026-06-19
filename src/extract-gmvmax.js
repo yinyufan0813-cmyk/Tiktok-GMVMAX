@@ -47,24 +47,35 @@ export function extractGmvMaxRecord({ labels, selectors }) {
   function extractTableRows() {
     const rowNodes = Array.from(document.querySelectorAll("tr, [role='row']"));
     return rowNodes
-      .map((row) => textOf(row))
-      .filter((rowText) => rowText.includes("LIVE GMV Max_") && rowText.includes(" ID:") && rowText.includes("MYR"))
-      .map((rowText, index) => {
-        const values = Array.from(rowText.matchAll(/([\d,]+(?:\.\d+)?)\s+MYR/g)).map((item) => parseNumber(item[1]));
-        if (values.length < 6) return null;
-
-        const activeMatch = rowText.match(/\s(?:Active|已生效)\s/);
-        const name = activeMatch?.index > 0 ? rowText.slice(0, activeMatch.index).trim() : `live-plan-${index + 1}`;
-        const account = rowText.match(/\d+\s+(?:recommendations?|条建议)\s+(.*?)\s+ID:/i)?.[1]?.trim() || null;
+      .map((row) => {
+        const cells = Array.from(row.querySelectorAll("th,td,[role='columnheader'],[role='cell'],[role='gridcell']"))
+          .map((cell) => textOf(cell))
+          .filter(Boolean);
+        return { rowText: textOf(row), cells };
+      })
+      .filter(({ rowText, cells }) => {
+        if (!rowText.includes("MYR") || !rowText.includes("ID:")) return false;
+        if (/广告计划名称|Campaign name/i.test(rowText)) return false;
+        return cells.length >= 5;
+      })
+      .map(({ rowText, cells }, index) => {
+        const accountCell = cells.find((cell) => cell.includes("ID:")) || rowText;
+        const account = accountCell.match(/(?:recommendations?|条建议)?\s*(.*?)\s+ID:/i)?.[1]?.trim() || null;
+        const name = cells[0] || `live-plan-${index + 1}`;
+        const moneyCells = cells.filter((cell) => /\bMYR\b/.test(cell));
+        const budget = moneyCells[0] || "";
+        const spend = moneyCells[1] || "";
+        const revenue = moneyCells[2] || "";
+        if (!account || !spend || !revenue) return null;
 
         return {
           index: index + 1,
           account,
           name,
-          totalSpend: moneyText(values[2]),
-          totalBudget: moneyText(values[3]),
-          netSpend: moneyText(values[4]),
-          totalOrderAmount: moneyText(values[5])
+          totalSpend: moneyText(parseNumber(spend)),
+          totalBudget: moneyText(parseNumber(budget)),
+          netSpend: moneyText(parseNumber(spend)),
+          totalOrderAmount: moneyText(parseNumber(revenue))
         };
       })
       .filter(Boolean);
@@ -117,6 +128,52 @@ export function extractGmvMaxRecord({ labels, selectors }) {
     return rows;
   }
 
+  function extractCampaignRowsFromBody(bodyText) {
+    const tableIndex = bodyText.indexOf("广告计划列表");
+    const source = tableIndex >= 0 ? bodyText.slice(tableIndex) : bodyText;
+    const headerIndex = source.indexOf("ROI");
+    const body = headerIndex >= 0 ? source.slice(headerIndex + 3) : source;
+    const blocks = body.split(/\n\s*\n\s*\n/);
+
+    return blocks
+      .map((block) => parseCampaignBlock(block))
+      .filter(Boolean)
+      .map((row, index) => ({ index: index + 1, ...row }));
+  }
+
+  function parseCampaignBlock(block) {
+    const text = String(block || "").trim();
+    if (!text || !text.includes("MYR") || !/\d{4}-\d{2}-\d{2}/.test(text)) return null;
+
+    const parts = text
+      .split(/\n\t\n/g)
+      .map((part) => part.replace(/\t/g, "").trim())
+      .filter(Boolean);
+    if (parts.length < 14) return null;
+
+    const tail = parts.slice(-6);
+    const name = parts[0].replace(/\n数据分析\n修改/g, "").trim();
+    const benefit = parts.slice(6, parts.length - 8).join(" | ").replace(/^[-\s|]+$/, "-").trim() || "-";
+
+    return {
+      name,
+      status: parts[1],
+      budget: moneyText(parseNumber(parts[2])),
+      cost: moneyText(parseNumber(parts[3])),
+      roiProtection: parts[4],
+      suggestionCount: /\d+/.test(parts[5] || "") ? Number((parts[5] || "").match(/\d+/)[0]) : 0,
+      benefit,
+      schedule: parts[parts.length - 8],
+      creativeBudget: parts[parts.length - 7],
+      targetRoi: parseNumber(tail[0]),
+      netCost: moneyText(parseNumber(tail[1])),
+      orders: parseNumber(tail[2]),
+      avgOrderCost: moneyText(parseNumber(tail[3])),
+      revenue: moneyText(parseNumber(tail[4])),
+      roi: parseNumber(tail[5])
+    };
+  }
+
   const bodyText = textOf(document.body).slice(0, 20000);
   const labelMetrics = Object.fromEntries(
     Object.entries(labels).map(([key, labelOptions]) => [key, valueAfterLabel(labelOptions)])
@@ -125,6 +182,7 @@ export function extractGmvMaxRecord({ labels, selectors }) {
   const plans = extractBySelectors();
   const tablePlans = extractTableRows();
   const englishPlans = englishLivePlans(bodyText);
+  const campaignRows = extractCampaignRowsFromBody(bodyText);
   const parsedPlans = plans.length > 0 ? plans : tablePlans.length > 0 ? tablePlans : englishPlans;
   const metrics = {
     newSpend: labelMetrics.newSpend || null,
@@ -139,9 +197,11 @@ export function extractGmvMaxRecord({ labels, selectors }) {
     title: document.title,
     metrics,
     plans: parsedPlans,
+    campaigns: campaignRows,
     pageState: {
       hasSystemError: /System error|No campaigns found/i.test(bodyText),
-      planCount: parsedPlans.length
+      planCount: parsedPlans.length,
+      campaignCount: campaignRows.length
     },
     bodyText
   };

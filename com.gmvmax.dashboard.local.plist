@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.gmvmax.dashboard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>sleep 20; /bin/zsh /Users/macbookair/GMVMAX-auto/scripts/gmvmax-dashboard-launcher.sh</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/gmvmax-dashboard.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/gmvmax-dashboard.err.log</string>
+</dict>
+</plist>

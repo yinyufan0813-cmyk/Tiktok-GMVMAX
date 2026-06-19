@@ -1,12 +1,16 @@
 node_modules/
 .env
 config.json
+config.explore.json
 chrome-profile/
+chrome-profile-explore/
+logs-explore/
 logs/*.jsonl
 logs/*.csv
 logs/*.png
 logs/*.html
 logs/*.txt
 !logs/.gitkeep
+drive-sync/gmvmax-archive-*/
 tmp-whatsapp-inspect/
 whatsapp-group-reports-*/

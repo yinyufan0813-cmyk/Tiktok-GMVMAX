@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "GMV Max Passive Network Monitor",
+  "version": "1.0.0",
+  "description": "Passively records TikTok GMV Max and material network responses for local model validation.",
+  "permissions": ["debugger", "tabs", "storage", "alarms"],
+  "host_permissions": [
+    "https://ads.tiktok.com/*",
+    "https://*.tiktok.com/*",
+    "https://*.tiktokv.com/*",
+    "https://*.tiktokcdn.com/*",
+    "https://*.byteoversea.com/*",
+    "https://script.google.com/*",
+    "http://127.0.0.1:8799/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://ads.tiktok.com/*"],
+      "js": ["content-script.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_title": "GMV Max Monitor"
+  }
+}
